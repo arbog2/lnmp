@@ -716,6 +716,7 @@ config_nginx_php() {
     cp "${SCRIPT_DIR}/include/enable-php.conf" /usr/local/nginx/conf
 	cp "${SCRIPT_DIR}/include/enable-php-pathinfo.conf" /usr/local/nginx/conf
 	cp "${SCRIPT_DIR}/include/fastcgi.conf" /usr/local/nginx/conf
+	cp "${SCRIPT_DIR}/include/pathinfo.conf" /usr/local/nginx/conf
     # 备份原始配置
     cp "${INSTALL_PATH}/nginx/conf/nginx.conf" "${INSTALL_PATH}/nginx/conf/nginx.conf.bak"
     
