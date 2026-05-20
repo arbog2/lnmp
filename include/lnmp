@@ -1,8 +1,9 @@
 #!/bin/bash
 addhost()
 {
+#!/bin/bash
 # Nginx 虚拟主机添加脚本
-# 功能：交互创建域名目录，生成 HTTP + HTTPS 配置，设置 PHP open_basedir 限制
+# 功能：交互创建域名目录，可选择生成 HTTP + HTTPS 或仅 HTTP 配置，设置 PHP open_basedir 限制
 
 NGINX_CONF_DIR="/usr/local/nginx/conf/conf.d"
 WEB_ROOT="/home/wwwroot"
@@ -33,6 +34,41 @@ while true; do
     fi
 done
 
+# 询问是否启用 SSL
+while true; do
+    read -p "是否启用 SSL/HTTPS？(y/n): " enable_ssl
+    if [[ "$enable_ssl" =~ ^[Yy]$ ]]; then
+        enable_ssl=true
+        break
+    elif [[ "$enable_ssl" =~ ^[Nn]$ ]]; then
+        enable_ssl=false
+        break
+    else
+        echo "请输入 y 或 n"
+    fi
+done
+
+# 如果启用 SSL，获取证书路径
+if [ "$enable_ssl" = true ]; then
+    while true; do
+        read -p "请输入 SSL 证书文件路径（.crt 或 .pem）: " ssl_cert
+        if [ -f "$ssl_cert" ]; then
+            break
+        else
+            echo "文件不存在，请重新输入"
+        fi
+    done
+
+    while true; do
+        read -p "请输入 SSL 私钥文件路径（.key）: " ssl_key
+        if [ -f "$ssl_key" ]; then
+            break
+        else
+            echo "文件不存在，请重新输入"
+        fi
+    done
+fi
+
 # 站点目录路径
 site_dir="${WEB_ROOT}/${domain}"
 
@@ -59,33 +95,106 @@ echo "已设置目录所有者: ${USER}:${GROUP}"
 cat > "${site_dir}/.user.ini" <<EOF
 open_basedir = ${site_dir}:/tmp/:/proc/
 EOF
-chown ${USER}:${GROUP} "${site_dir}"
+chown ${USER}:${GROUP} "${site_dir}/.user.ini"
 chmod 644 "${site_dir}/.user.ini"
 chattr +i "${site_dir}/.user.ini"
 echo "已创建 .user.ini，限制 PHP open_basedir"
 
-# 获取证书路径
-while true; do
-    read -p "请输入 SSL 证书文件路径（.crt 或 .pem）: " ssl_cert
-    if [ -f "$ssl_cert" ]; then
-        break
-    else
-        echo "文件不存在，请重新输入"
-    fi
-done
-
-while true; do
-    read -p "请输入 SSL 私钥文件路径（.key）: " ssl_key
-    if [ -f "$ssl_key" ]; then
-        break
-    else
-        echo "文件不存在，请重新输入"
-    fi
-done
-
 # 生成 Nginx 配置文件
 conf_file="${NGINX_CONF_DIR}/${domain}.conf"
-cat > "$conf_file" <<EOF
+
+if [ "$enable_ssl" = true ]; then
+    # 生成 HTTP + HTTPS 配置（HTTP 跳转到 HTTPS）
+    cat > "$conf_file" <<EOF
+server
+    {
+        listen 80;
+        #listen [::]:80;
+        server_name ${domain} ;
+        index index.html index.htm index.php default.html default.htm default.php;
+        root  ${site_dir};
+
+        #include rewrite/none.conf;
+        #error_page   404   /404.html;
+
+        # Deny access to PHP files in specific directory
+        #location ~ /(wp-content|uploads|wp-includes|images)/.*\.php$ { deny all; }
+
+        include enable-php-pathinfo.conf;
+
+        location ~ .*\.(gif|jpg|jpeg|png|bmp|swf)$
+        {
+            expires      30d;
+        }
+
+        location ~ .*\.(js|css)?$
+        {
+            expires      12h;
+        }
+
+        location ~ /.well-known {
+            allow all;
+        }
+
+        location ~ /\.
+        {
+            deny all;
+        }
+
+        location / {
+            return 301 https://\$host\$request_uri;
+        }
+
+        access_log  /home/wwwlogs/${domain}.log;
+    }
+
+server
+    {
+        listen 443 ssl;
+        #listen [::]:443 ssl http2;
+        server_name ${domain} ;
+        index index.html index.htm index.php default.html default.htm default.php;
+        root  ${site_dir};
+
+        ssl_certificate ${ssl_cert};
+        ssl_certificate_key ${ssl_key};
+        ssl_session_timeout 5m;
+        ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3;
+        ssl_prefer_server_ciphers on;
+        ssl_ciphers "TLS13-AES-256-GCM-SHA384:TLS13-CHACHA20-POLY1305-SHA256:TLS13-AES-128-GCM-SHA256:TLS13-AES-128-CCM-8-SHA256:TLS13-AES-128-CCM-SHA256:EECDH+CHACHA20:EECDH+CHACHA20-draft:EECDH+AES128:RSA+AES128:EECDH+AES256:RSA+AES256:EECDH+3DES:RSA+3DES:!MD5";
+        ssl_session_cache builtin:1000 shared:SSL:10m;
+        # openssl dhparam -out /usr/local/nginx/conf/ssl/dhparam.pem 2048
+        ssl_dhparam /usr/local/nginx/conf/ssl/dhparam.pem;
+        #include rewrite/none.conf;
+        #error_page   404   /404.html;
+        # Deny access to PHP files in specific directory
+        #location ~ /(wp-content|uploads|wp-includes|images)/.*\.php$ { deny all; }	
+		include enable-php-pathinfo.conf;
+        location ~ .*\.(gif|jpg|jpeg|png|bmp|swf)$
+        {
+            expires      30d;
+        }
+
+        location ~ .*\.(js|css)?$
+        {
+            expires      12h;
+        }
+
+        location ~ /.well-known {
+            allow all;
+        }
+
+        location ~ /\.
+        {
+            deny all;
+        }
+
+        access_log  /home/wwwlogs/${domain}.log;
+    }
+EOF
+else
+    # 生成仅 HTTP 配置
+    cat > "$conf_file" <<EOF
 server
     {
         listen 80;
@@ -121,57 +230,10 @@ server
             deny all;
         }
 
-        location / {
-            return 301 https://$host$request_uri;
-        }
-
-        access_log  /home/wwwlogs/${domain}.log;
-    }
-
-server
-    {
-        listen 443 ssl;
-        #listen [::]:443 ssl http2;
-        server_name ${domain} ;
-        index index.html index.htm index.php default.html default.htm default.php;
-        root  ${site_dir};
-
-        ssl_certificate ${ssl_cert};
-        ssl_certificate_key ${ssl_key};
-        ssl_session_timeout 5m;
-        ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3;
-        ssl_prefer_server_ciphers on;
-        ssl_ciphers "TLS13-AES-256-GCM-SHA384:TLS13-CHACHA20-POLY1305-SHA256:TLS13-AES-128-GCM-SHA256:TLS13-AES-128-CCM-8-SHA256:TLS13-AES-128-CCM-SHA256:EECDH+CHACHA20:EECDH+CHACHA20-draft:EECDH+AES128:RSA+AES128:EECDH+AES256:RSA+AES256:EECDH+3DES:RSA+3DES:!MD5";
-        ssl_session_cache builtin:1000 shared:SSL:10m;
-        # openssl dhparam -out /usr/local/nginx/conf/ssl/dhparam.pem 2048
-        ssl_dhparam /usr/local/nginx/conf/ssl/dhparam.pem;
-        #include rewrite/none.conf;
-        #error_page   404   /404.html;
-        # Deny access to PHP files in specific directory
-        #location ~ /(wp-content|uploads|wp-includes|images)/.*\.php$ { deny all; }	
-		#include enable-php-pathinfo.conf;
-        location ~ .*\.(gif|jpg|jpeg|png|bmp|swf)$
-        {
-            expires      30d;
-        }
-
-        location ~ .*\.(js|css)?$
-        {
-            expires      12h;
-        }
-
-        location ~ /.well-known {
-            allow all;
-        }
-
-        location ~ /\.
-        {
-            deny all;
-        }
-
         access_log  /home/wwwlogs/${domain}.log;
     }
 EOF
+fi
 
 if [ $? -eq 0 ]; then
     echo "Nginx 配置文件已生成: $conf_file"
@@ -186,11 +248,269 @@ echo "=========================================="
 echo "虚拟主机配置完成！请执行以下命令测试并重新加载 Nginx："
 echo "  nginx -t"
 echo "  systemctl reload nginx   # 或 nginx -s reload"
+if [ "$enable_ssl" = true ]; then
+    echo ""
+    echo "注意：请确保 dhparam.pem 文件存在："
+    echo "  /usr/local/nginx/conf/ssl/dhparam.pem"
+    echo "如不存在，可执行：openssl dhparam -out /usr/local/nginx/conf/ssl/dhparam.pem 2048"
+fi
 echo "=========================================="
+}
+delhost()
+{
+#!/bin/bash
+# Nginx 虚拟主机删除脚本
+# 功能：交互选择要删除的站点，删除 Nginx 配置文件、站点目录（可选）、.user.ini 保护
+
+NGINX_CONF_DIR="/usr/local/nginx/conf/conf.d"
+WEB_ROOT="/home/wwwroot"
+
+# 检查是否为 root 用户
+if [ "$EUID" -ne 0 ]; then
+    echo "请使用 root 用户或 sudo 执行此脚本"
+    exit 1
+fi
+
+# 检查 Nginx 配置目录是否存在
+if [ ! -d "$NGINX_CONF_DIR" ]; then
+    echo "错误：Nginx 配置目录 $NGINX_CONF_DIR 不存在"
+    exit 1
+fi
+
+# 获取所有已配置的域名
+get_configured_domains() {
+    local domains=()
+    if [ -d "$NGINX_CONF_DIR" ]; then
+        for conf in "$NGINX_CONF_DIR"/*.conf; do
+            if [ -f "$conf" ]; then
+                # 从配置文件中提取 server_name
+                local domain=$(grep -m 1 "server_name" "$conf" | sed -E 's/.*server_name\s+([^;]+);.*/\1/' | awk '{print $1}')
+                if [ -n "$domain" ]; then
+                    domains+=("$domain|$conf")
+                fi
+            fi
+        done
+    fi
+    echo "${domains[@]}"
+}
+
+# 显示所有站点列表
+show_site_list() {
+    echo ""
+    echo "=========================================="
+    echo "当前配置的虚拟主机列表："
+    echo "=========================================="
+    local index=1
+    for item in "${sites[@]}"; do
+        domain=$(echo "$item" | cut -d'|' -f1)
+        conf=$(echo "$item" | cut -d'|' -f2)
+        site_dir="${WEB_ROOT}/${domain}"
+        
+        # 检查站点目录是否存在
+        if [ -d "$site_dir" ]; then
+            dir_status="✓ 存在"
+        else
+            dir_status="✗ 不存在"
+        fi
+        
+        printf "%3d) %-30s (配置: %s)\n" "$index" "$domain" "$dir_status"
+        ((index++))
+    done
+    echo "=========================================="
+}
+
+# 获取站点信息
+get_site_info() {
+    local domain=$1
+    local conf_file="${NGINX_CONF_DIR}/${domain}.conf"
+    local site_dir="${WEB_ROOT}/${domain}"
+    local user_ini="${site_dir}/.user.ini"
+    
+    echo "$conf_file|$site_dir|$user_ini"
+}
+
+# 删除站点
+delete_site() {
+    local domain=$1
+    local delete_files=$2
+    
+    # 获取站点信息
+    IFS='|' read -r conf_file site_dir user_ini <<< "$(get_site_info "$domain")"
+    
+    echo ""
+    echo "=========================================="
+    echo "准备删除站点: $domain"
+    echo "=========================================="
+    
+    # 1. 删除 Nginx 配置文件
+    if [ -f "$conf_file" ]; then
+        rm -f "$conf_file"
+        if [ $? -eq 0 ]; then
+            echo "✓ 已删除配置文件: $conf_file"
+        else
+            echo "✗ 删除配置文件失败: $conf_file"
+            return 1
+        fi
+    else
+        echo "! 配置文件不存在: $conf_file"
+    fi
+    
+    # 2. 删除 .user.ini 保护（如果有）
+    if [ -f "$user_ini" ]; then
+        # 移除不可变属性
+        chattr -i "$user_ini" 2>/dev/null
+        rm -f "$user_ini"
+        if [ $? -eq 0 ]; then
+            echo "✓ 已删除 .user.ini: $user_ini"
+        else
+            echo "✗ 删除 .user.ini 失败: $user_ini"
+        fi
+    fi
+    
+    # 3. 根据选择删除站点目录
+    if [ "$delete_files" = "yes" ]; then
+        if [ -d "$site_dir" ]; then
+            rm -rf "$site_dir"
+            if [ $? -eq 0 ]; then
+                echo "✓ 已删除站点目录: $site_dir"
+            else
+                echo "✗ 删除站点目录失败: $site_dir"
+                return 1
+            fi
+        else
+            echo "! 站点目录不存在: $site_dir"
+        fi
+    else
+        echo "○ 保留站点目录: $site_dir"
+    fi
+    
+    # 4. 删除访问日志（如果存在）
+    log_file="/home/wwwlogs/${domain}.log"
+    if [ -f "$log_file" ]; then
+        read -p "是否删除访问日志文件 $log_file？(y/n): " delete_log
+        if [[ "$delete_log" =~ ^[Yy]$ ]]; then
+            rm -f "$log_file"
+            echo "✓ 已删除日志文件: $log_file"
+        else
+            echo "○ 保留日志文件: $log_file"
+        fi
+    fi
+    
+    echo ""
+    echo "✓ 站点 $domain 删除完成！"
+    return 0
+}
+
+# 主程序开始
+echo "=========================================="
+echo "Nginx 虚拟主机删除脚本"
+echo "=========================================="
+
+# 获取所有配置的站点
+sites=($(get_configured_domains))
+
+if [ ${#sites[@]} -eq 0 ]; then
+    echo "未找到任何 Nginx 虚拟主机配置"
+    echo "请检查目录: $NGINX_CONF_DIR"
+    exit 1
+fi
+
+# 显示站点列表
+show_site_list
+
+# 选择删除方式
+echo ""
+echo "请选择删除方式："
+echo "  1) 交互式选择要删除的站点"
+echo "  2) 输入域名直接删除"
+echo "  0) 退出"
+read -p "请选择 [0-2]: " select_mode
+
+case $select_mode in
+    0)
+        echo "已退出"
+        exit 0
+        ;;
+    1)
+        # 交互式选择
+        read -p "请输入要删除的站点编号: " site_num
+        if ! [[ "$site_num" =~ ^[0-9]+$ ]] || [ "$site_num" -lt 1 ] || [ "$site_num" -gt ${#sites[@]} ]; then
+            echo "无效的编号"
+            exit 1
+        fi
+        
+        selected_item="${sites[$((site_num-1))]}"
+        domain=$(echo "$selected_item" | cut -d'|' -f1)
+        ;;
+    2)
+        # 直接输入域名
+        read -p "请输入要删除的域名: " domain
+        # 验证域名是否存在配置
+        found=0
+        for item in "${sites[@]}"; do
+            d=$(echo "$item" | cut -d'|' -f1)
+            if [ "$d" = "$domain" ]; then
+                found=1
+                break
+            fi
+        done
+        if [ $found -eq 0 ]; then
+            echo "错误：域名 $domain 没有找到对应的配置"
+            exit 1
+        fi
+        ;;
+    *)
+        echo "无效的选择"
+        exit 1
+        ;;
+esac
+
+echo ""
+echo "已选择站点: $domain"
+
+# 确认删除
+echo ""
+echo "警告：删除操作不可恢复！"
+read -p "是否删除站点目录中的文件？(y/n): " delete_files_choice
+if [[ "$delete_files_choice" =~ ^[Yy]$ ]]; then
+    delete_files="yes"
+    echo "将删除站点目录和所有文件"
+else
+    delete_files="no"
+    echo "将保留站点目录，仅删除 Nginx 配置"
+fi
+
+echo ""
+read -p "确认删除站点 $domain？(y/n): " confirm
+if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    echo "已取消操作"
+    exit 0
+fi
+
+# 执行删除
+delete_site "$domain" "$delete_files"
+
+if [ $? -eq 0 ]; then
+    # 测试 Nginx 配置并提示重启
+    echo ""
+    echo "=========================================="
+    echo "请执行以下命令测试并重新加载 Nginx："
+    echo "  nginx -t"
+    echo "  systemctl reload nginx   # 或 nginx -s reload"
+    echo "=========================================="
+else
+    echo ""
+    echo "删除过程中出现错误，请检查后重试"
+    exit 1
+fi
 }
 case "$1" in
 	add)
         addhost
+		systemctl reload nginx
+        ;;
+	del)
+        delhost
 		systemctl reload nginx
         ;;
     start)
