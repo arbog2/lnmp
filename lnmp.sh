@@ -807,7 +807,7 @@ main() {
     
     check_root
     check_disk_space 3 # 增加到 3GB 空间（考虑 MySQL 8.4 编译需求）
-    check_memory 2048  # 增加到 2GB 内存（考虑 MySQL 8.4 编译需求）
+    check_memory 1500  # 1.5GB 内存（MySQL 8.4 编译需求）
     
     #install_dependencies
     #install_nginx
