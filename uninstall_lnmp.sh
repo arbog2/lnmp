@@ -6,8 +6,8 @@
 
 set -e
 
-# 默认安装路径（与 lnmp.sh 保持一致）
-INSTALL_PATH="/usr/local"
+# 默认安装路径（与 lnmp.sh 保持一致，支持环境变量覆盖）
+INSTALL_PATH=${INSTALL_PATH:-"/usr/local"}
 NGINX_PATH="${INSTALL_PATH}/nginx"
 MYSQL_PATH="${INSTALL_PATH}/mysql"
 PHP_PATH="${INSTALL_PATH}/php"
@@ -120,7 +120,7 @@ uninstall_nginx() {
         rm -rf "$LOG_PATH"
         log_success "已删除日志目录: $LOG_PATH"
     fi
-	read -p "是否删除系统 wwww 用户? (y/N): " del_user
+	read -p "是否删除系统 www 用户? (y/N): " del_user
     if [[ "$del_user" =~ ^[Yy]$ ]]; then
         userdel www 2>/dev/null && log_success "已删除 www 用户" || log_warn "www 用户不存在或无法删除"
 		groupdel www 2>/dev/null && log_success "已删除 www 用户组" || log_warn "www 用户组不存在或无法删除"
@@ -167,6 +167,16 @@ uninstall_mysql() {
     if [[ -f "$MYSQL_CNF" ]]; then
         rm -f "$MYSQL_CNF"
         log_success "已删除 MySQL 配置文件: $MYSQL_CNF"
+    fi
+    # 清理 systemd tmpfiles 配置
+    if [[ -f "/etc/tmpfiles.d/mysql.conf" ]]; then
+        rm -f /etc/tmpfiles.d/mysql.conf
+        log_success "已删除: /etc/tmpfiles.d/mysql.conf"
+    fi
+    # 清理 MySQL 运行时目录
+    if [[ -d "/var/run/mysqld" ]]; then
+        rm -rf /var/run/mysqld
+        log_success "已删除: /var/run/mysqld"
     fi
     read -p "是否删除系统 mysql 用户? (y/N): " del_user
     if [[ "$del_user" =~ ^[Yy]$ ]]; then
