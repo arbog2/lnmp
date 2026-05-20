@@ -71,10 +71,13 @@ lnmp stop     # 停止所有服务
 lnmp restart  # 重启所有服务
 lnmp reload   # 重载 Nginx 和 PHP-FPM
 lnmp status   # 查看服务状态
-lnmp add      # 交互式添加虚拟主机（含 SSL）
+lnmp add      # 交互式添加虚拟主机（可选 SSL）
+lnmp del      # 交互式删除虚拟主机
 ```
 
 ## 管理虚拟主机
+
+### 添加站点
 
 ```bash
 lnmp add
@@ -82,9 +85,24 @@ lnmp add
 
 交互式流程：
 1. 输入域名
-2. 输入 SSL 证书路径（.crt/.pem）
-3. 输入 SSL 私钥路径（.key）
-4. 自动生成 Nginx 配置文件并重载
+2. 选择是否启用 SSL/HTTPS
+   - 启用 → 输入 SSL 证书和私钥路径 → 生成 HTTP + HTTPS 配置（HTTP 自动跳转 HTTPS）
+   - 不启用 → 生成纯 HTTP 配置
+3. 自动生成 Nginx 配置文件并重载
+
+### 删除站点
+
+```bash
+lnmp del
+```
+
+交互式流程：
+1. 列出当前所有已配置的虚拟主机
+2. 选择删除方式（编号选择或直接输入域名）
+3. 选择是否同时删除站点目录文件
+4. 确认后删除 Nginx 配置文件、站点目录（可选）、.user.ini 保护
+5. 可选删除访问日志文件
+6. 自动重载 Nginx
 
 ## 卸载
 
@@ -102,10 +120,11 @@ lnmp/
 ├── lnmp.sh                 # 主安装脚本
 ├── uninstall_lnmp.sh       # 卸载脚本
 ├── include/
-│   ├── lnmp                # lnmp 系统命令
+│   ├── lnmp                # lnmp 系统命令（start/stop/restart/reload/status/add/del）
 │   ├── fastcgi.conf        # FastCGI 参数配置
 │   ├── enable-php.conf     # PHP 解析配置
-│   └── enable-php-pathinfo.conf  # PHP pathinfo 配置
+│   ├── enable-php-pathinfo.conf  # PHP pathinfo 配置
+│   └── pathinfo.conf       # pathinfo 支持配置
 └── src/                    # 源码包存放目录
 ```
 
