@@ -809,11 +809,11 @@ main() {
     check_disk_space 3 # 增加到 3GB 空间（考虑 MySQL 8.4 编译需求）
     check_memory 1500  # 1.5GB 内存（MySQL 8.4 编译需求）
     
-    #install_dependencies
-    #install_nginx
-    #install_php
-    #config_nginx_php
-	#install_mysql
+    install_dependencies
+    install_nginx
+    install_php
+    config_nginx_php
+	install_mysql
     create_lnmp_command
     # 创建SSL目录
 	log_info "SSL_PATH: $SSL_PATH"
