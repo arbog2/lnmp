@@ -20,6 +20,11 @@
 ## 使用方法
 
 ```bash
+# 1. 克隆仓库
+git clone https://gitee.com/arbog/lnmp.git
+cd lnmp
+
+# 2. 执行安装（需 root 权限）
 chmod +x lnmp.sh
 ./lnmp.sh
 ```
