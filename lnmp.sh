@@ -143,7 +143,7 @@ install_dependencies() {
                 libgdbm-dev libexpat1-dev \
                 libgssapi-krb5-2 \
                 libmaxminddb-dev libtirpc-dev \
-                libatomic1 ninja-build
+                libatomic1 ninja-build rpcsvc-proto
             ;;
         rhel|centos|rocky|almalinux)
             log_info "Installing EPEL for $OS_ID..."
@@ -169,7 +169,7 @@ install_dependencies() {
                 libXpm-devel gdbm-devel expat-devel \
                 libmaxminddb-devel libtirpc-devel \
                 libatomic ninja-build \
-                diffutils file perl-Data-Dumper
+                diffutils file perl-Data-Dumper rpcgen
             ;;
         *)
             log_error "Unsupported OS: $OS_ID"
