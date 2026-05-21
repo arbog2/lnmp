@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =============================================================================
-# LNMP 一键安装脚本 (Debian 12/13)
+# LNMP 一键安装脚本 (Debian / RHEL / CentOS)
 # 功能：
 # - 编译安装 Nginx、MySQL、PHP
 # - 支持自定义版本号、路径、密码等参数
@@ -63,6 +63,19 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# OS 检测
+detect_os() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS_ID=$ID
+        OS_VERSION_ID=$VERSION_ID
+    else
+        log_error "Cannot detect OS"
+        exit 1
+    fi
+    log_info "Detected OS: $OS_ID $OS_VERSION_ID"
+}
+
 # 检查是否为 root 用户
 check_root() {
     if [[ $EUID -ne 0 ]]; then
@@ -104,89 +117,65 @@ check_memory() {
 # 安装系统依赖
 install_dependencies() {
     log_info "Updating system packages..."
-    apt update
     
-    log_info "Installing required dependencies..."
-    apt install -y \
-        build-essential \
-        wget \
-        curl \
-        git \
-        cmake \
-        gcc \
-        g++ \
-        make \
-        libtool \
-        autoconf \
-        pkg-config \
-        gnupg2 \
-        ca-certificates \
-        lsb-release \
-        libpcre2-dev \
-        libssl-dev \
-        libcurl4-openssl-dev \
-        libjpeg-dev \
-        libpng-dev \
-        libfreetype6-dev \
-        libonig-dev \
-        libzip-dev \
-        libxml2-dev \
-        libxslt1-dev \
-        libbz2-dev \
-        libreadline-dev \
-        libsqlite3-dev \
-        libgmp-dev \
-        libldap2-dev \
-        libmemcached-dev \
-        libsasl2-dev \
-        libkrb5-dev \
-        libedit-dev \
-        libncurses5-dev \
-        libaio-dev \
-        libnuma-dev \
-        libtinfo-dev \
-        libncurses-dev \
-        libargon2-dev \
-        libffi-dev \
-        libgd-dev \
-        libicu-dev \
-        libpspell-dev \
-        librecode-dev \
-        libsnmp-dev \
-        libtidy-dev \
-        libwebp-dev \
-        libxpm-dev \
-        libgdbm-dev \
-        libexpat1-dev \
-        libgssapi-krb5-2 \
-        libicu-dev \
-        libjpeg62-turbo-dev \
-        libpng-dev \
-        libwebp-dev \
-        libxpm-dev \
-        libfreetype6-dev \
-        libssl-dev \
-        libcurl4-openssl-dev \
-        libonig-dev \
-        libzip-dev \
-        libxml2-dev \
-        libxslt1-dev \
-        libbz2-dev \
-        libreadline-dev \
-        libsqlite3-dev \
-        libgmp-dev \
-        libldap2-dev \
-        libmemcached-dev \
-        libsasl2-dev \
-        libkrb5-dev \
-        libedit-dev \
-        libncurses5-dev \
-        libtinfo-dev \
-        libncurses-dev \
-        libmaxminddb-dev \
-        libtirpc-dev \
-        libatomic1 \
-        ninja-build
+    case "$OS_ID" in
+        debian|ubuntu)
+            apt update
+            log_info "Installing required dependencies for $OS_ID..."
+            apt install -y \
+                build-essential \
+                wget curl git cmake \
+                autoconf libtool pkg-config \
+                gnupg2 ca-certificates lsb-release \
+                libpcre2-dev \
+                libssl-dev libcurl4-openssl-dev \
+                libjpeg-dev libpng-dev libfreetype6-dev \
+                libwebp-dev libxpm-dev libjpeg62-turbo-dev \
+                libonig-dev libzip-dev \
+                libxml2-dev libxslt1-dev \
+                libbz2-dev libreadline-dev libsqlite3-dev \
+                libgmp-dev libldap2-dev libmemcached-dev \
+                libsasl2-dev libkrb5-dev libedit-dev \
+                libncurses5-dev libtinfo-dev libncurses-dev \
+                libaio-dev libnuma-dev \
+                libargon2-dev libffi-dev libgd-dev libicu-dev \
+                libpspell-dev librecode-dev libsnmp-dev libtidy-dev \
+                libgdbm-dev libexpat1-dev \
+                libgssapi-krb5-2 \
+                libmaxminddb-dev libtirpc-dev \
+                libatomic1 ninja-build
+            ;;
+        rhel|centos|rocky|almalinux)
+            log_info "Installing EPEL for $OS_ID..."
+            dnf install -y epel-release
+            dnf makecache
+            log_info "Installing required dependencies for $OS_ID..."
+            dnf install -y \
+                gcc gcc-c++ make \
+                wget curl git cmake \
+                autoconf libtool pkgconfig \
+                gnupg2 ca-certificates redhat-lsb-core \
+                pcre2-devel openssl-devel libcurl-devel \
+                libjpeg-turbo-devel libpng-devel freetype-devel \
+                oniguruma-devel libzip-devel \
+                libxml2-devel libxslt-devel bzip2-devel \
+                readline-devel sqlite-devel gmp-devel \
+                openldap-devel libmemcached-devel cyrus-sasl-devel \
+                krb5-devel libedit-devel ncurses-devel \
+                libaio-devel numactl-devel \
+                libargon2-devel libffi-devel gd-devel \
+                libicu-devel aspell-devel recode-devel \
+                net-snmp-devel libtidy-devel libwebp-devel \
+                libXpm-devel gdbm-devel expat-devel \
+                libmaxminddb-devel libtirpc-devel \
+                libatomic ninja-build \
+                diffutils file perl-Data-Dumper
+            ;;
+        *)
+            log_error "Unsupported OS: $OS_ID"
+            exit 1
+            ;;
+    esac
     
     log_success "Dependencies installed successfully"
 }
@@ -794,7 +783,7 @@ create_lnmp_command() {
 
 # 主函数
 main() {
-    log_info "Starting LNMP installation on Debian 12/13..."
+    log_info "Starting LNMP installation on $OS_ID $OS_VERSION_ID..."
     log_info "Configuration:"
     log_info "  Nginx Version: $NGINX_VERSION"
     log_info "  MySQL Version: $MYSQL_VERSION"
@@ -807,6 +796,7 @@ main() {
     log_info "  MySQL Root Password: $MYSQL_ROOT_PASSWORD"
     
     check_root
+    detect_os
     check_disk_space 3 # 增加到 3GB 空间（考虑 MySQL 8.4 编译需求）
     check_memory 1500  # 1.5GB 内存（MySQL 8.4 编译需求）
     
