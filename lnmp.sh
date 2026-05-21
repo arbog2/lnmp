@@ -126,7 +126,7 @@ install_dependencies() {
                 build-essential \
                 wget curl git cmake \
                 autoconf libtool pkg-config \
-                gnupg2 ca-certificates lsb-release \
+                gnupg2 ca-certificates \
                 libpcre2-dev \
                 libssl-dev libcurl4-openssl-dev \
                 libjpeg-dev libpng-dev libfreetype6-dev \
@@ -154,7 +154,7 @@ install_dependencies() {
                 gcc gcc-c++ make \
                 wget curl git cmake \
                 autoconf libtool pkgconfig \
-                gnupg2 ca-certificates redhat-lsb-core \
+                gnupg2 ca-certificates \
                 pcre2-devel openssl-devel libcurl-devel \
                 libjpeg-turbo-devel libpng-devel freetype-devel \
                 oniguruma-devel libzip-devel \
