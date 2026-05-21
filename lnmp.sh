@@ -272,7 +272,7 @@ install_nginx() {
 	if getent group www >/dev/null 2>&1; then
 		echo "组 www 已存在，跳过创建"
 	else
-		groupadd www
+		/usr/sbin/groupadd www
 		if [ $? -eq 0 ]; then
 			echo "组 www 创建成功"
 		else
@@ -286,7 +286,7 @@ install_nginx() {
 		echo "用户 www 已存在，跳过创建"
 	else
 		# 常用选项：主组 www，禁止登录 shell，创建家目录 /home/www
-		useradd -s /sbin/nologin -g www www
+		/usr/sbin/useradd -s /sbin/nologin -g www www
 		if [ $? -eq 0 ]; then
 			echo "用户 www 创建成功"
 		else
@@ -338,7 +338,7 @@ EOF
 # 编译安装 MySQL
 install_mysql() {
     log_info "Starting MySQL installation..."
-	id mysql &>/dev/null || useradd -r -s /bin/false mysql
+	id mysql &>/dev/null || /usr/sbin/useradd -r -s /bin/false mysql
     log_info "Checking for existing MySQL processes..."
 	if pgrep mysqld > /dev/null; then
 		log_warn "Existing mysqld process found, stopping..."
