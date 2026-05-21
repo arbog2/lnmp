@@ -184,6 +184,7 @@ install_dependencies() {
         libtinfo-dev \
         libncurses-dev \
         libmaxminddb-dev \
+        libtirpc-dev \
         libatomic1 \
         ninja-build
     
