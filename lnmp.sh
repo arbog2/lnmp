@@ -167,7 +167,7 @@ install_dependencies() {
                 libicu-devel aspell-devel recode-devel \
                 net-snmp-devel libtidy-devel libwebp-devel \
                 libXpm-devel gdbm-devel expat-devel \
-                libmaxminddb-devel libtirpc-devel \
+                libmaxminddb-devel libtirpc-devel libquadmath-devel \
                 libatomic ninja-build \
                 diffutils file perl-Data-Dumper rpcgen
             ;;
