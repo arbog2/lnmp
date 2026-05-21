@@ -388,7 +388,7 @@ install_mysql() {
         -DWITH_EDITLINE=system
     
     log_info "Compiling MySQL (this may take a while)..."
-    make -j$(nproc)
+    make -j2
     
     log_info "Installing MySQL..."
     make install
