@@ -8,6 +8,7 @@
 # - 检查本地源码，不存在则下载
 # - 创建 lnmp 系统命令
 # - 检查磁盘和内存空间
+# - 自动验证和修复PHP扩展（GD、pdo_mysql、mysqli、zip等）
 # =============================================================================
 
 set -e
@@ -36,7 +37,6 @@ MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-"gzmcisco"}
 # 源码目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_DIR="${SCRIPT_DIR}/src"
-#SRC_DIR="./src"
 mkdir -p "${SRC_DIR}"
 
 # 颜色输出
@@ -157,6 +157,7 @@ install_dependencies() {
                 gnupg2 ca-certificates openssl \
                 pcre2-devel openssl-devel libcurl-devel \
                 libjpeg-turbo-devel libpng-devel freetype-devel \
+                libwebp-devel libXpm-devel \
                 oniguruma-devel libzip-devel \
                 libxml2-devel libxslt-devel bzip2-devel \
                 readline-devel sqlite-devel gmp-devel \
@@ -165,11 +166,11 @@ install_dependencies() {
                 libaio-devel numactl-devel \
                 libargon2-devel libffi-devel gd-devel \
                 libicu-devel aspell-devel recode-devel \
-                net-snmp-devel libtidy-devel libwebp-devel \
-                libXpm-devel gdbm-devel expat-devel \
+                net-snmp-devel libtidy-devel \
+                gdbm-devel expat-devel \
                 libmaxminddb-devel libtirpc-devel libquadmath-devel \
                 libatomic ninja-build \
-                diffutils file perl-Data-Dumper rpcgen php-gd php-xml
+                diffutils file perl-Data-Dumper rpcgen
             ;;
         *)
             log_error "Unsupported OS: $OS_ID"
@@ -259,43 +260,43 @@ install_nginx() {
     # 返回到源码目录
     cd "$current_dir"
     cd "$SRC_DIR"
-	if getent group www >/dev/null 2>&1; then
-		echo "组 www 已存在，跳过创建"
-	else
-		/usr/sbin/groupadd www
-		if [ $? -eq 0 ]; then
-			echo "组 www 创建成功"
-		else
-			echo "组 www 创建失败，退出"
-			exit 1
-		fi
-	fi
+    if getent group www >/dev/null 2>&1; then
+        echo "组 www 已存在，跳过创建"
+    else
+        /usr/sbin/groupadd www
+        if [ $? -eq 0 ]; then
+            echo "组 www 创建成功"
+        else
+            echo "组 www 创建失败，退出"
+            exit 1
+        fi
+    fi
 
-	# 创建用户 www（如不存在）
-	if getent passwd www >/dev/null 2>&1; then
-		echo "用户 www 已存在，跳过创建"
-	else
-		# 常用选项：主组 www，禁止登录 shell，创建家目录 /home/www
-		/usr/sbin/useradd -s /sbin/nologin -g www www
-		if [ $? -eq 0 ]; then
-			echo "用户 www 创建成功"
-		else
-			echo "用户 www 创建失败"
-			exit 1
-		fi
-	fi
-	mkdir -p "$LOG_PATH"
+    # 创建用户 www（如不存在）
+    if getent passwd www >/dev/null 2>&1; then
+        echo "用户 www 已存在，跳过创建"
+    else
+        # 常用选项：主组 www，禁止登录 shell，创建家目录 /home/www
+        /usr/sbin/useradd -s /sbin/nologin -g www www
+        if [ $? -eq 0 ]; then
+            echo "用户 www 创建成功"
+        else
+            echo "用户 www 创建失败"
+            exit 1
+        fi
+    fi
+    mkdir -p "$LOG_PATH"
     chmod 777 "$LOG_PATH"
     # 创建默认网站目录
     mkdir -p "${WEB_PATH}"
-	chmod +w "${WEB_PATH}"
-	chown -R www:www "$WEB_PATH"
-	cat >$WEB_PATH/.user.ini<<EOF
+    chmod +w "${WEB_PATH}"
+    chown -R www:www "$WEB_PATH"
+    cat >$WEB_PATH/.user.ini<<EOF
 open_basedir=$WEB_PATH:/tmp/:/proc/
 EOF
         chmod 644 ${WEB_PATH}/.user.ini
         chattr +i ${WEB_PATH}/.user.ini
-		cat >>/usr/local/nginx/conf/fastcgi.conf<<EOF
+        cat >>/usr/local/nginx/conf/fastcgi.conf<<EOF
 fastcgi_param PHP_ADMIN_VALUE "open_basedir=\$document_root/:/tmp/:/proc/";
 EOF
     echo "<h1>Welcome to LNMP on Debian!</h1><p>Nginx is running.</p>" > "$WEB_PATH/index.html"
@@ -328,19 +329,19 @@ EOF
 # 编译安装 MySQL
 install_mysql() {
     log_info "Starting MySQL installation..."
-	id mysql &>/dev/null || /usr/sbin/useradd -r -s /bin/false mysql
+    id mysql &>/dev/null || /usr/sbin/useradd -r -s /bin/false mysql
     log_info "Checking for existing MySQL processes..."
-	if pgrep mysqld > /dev/null; then
-		log_warn "Existing mysqld process found, stopping..."
-		systemctl stop mysql 2>/dev/null || true
-		pkill -9 mysqld 2>/dev/null || true
-		sleep 2
-	fi
+    if pgrep mysqld > /dev/null; then
+        log_warn "Existing mysqld process found, stopping..."
+        systemctl stop mysql 2>/dev/null || true
+        pkill -9 mysqld 2>/dev/null || true
+        sleep 2
+    fi
 
-	# 清理残留的 socket 文件
-	rm -rf /var/run/mysqld/*.sock 2>/dev/null || true
-	mkdir -p /var/run/mysqld
-	chown mysql:mysql /var/run/mysqld
+    # 清理残留的 socket 文件
+    rm -rf /var/run/mysqld/*.sock 2>/dev/null || true
+    mkdir -p /var/run/mysqld
+    chown mysql:mysql /var/run/mysqld
     local mysql_filename="mysql-${MYSQL_VERSION}.tar.gz"
     local mysql_url="https://cdn.mysql.com/Downloads/MySQL-8.4/${mysql_filename}"
     
@@ -396,9 +397,6 @@ install_mysql() {
     # 返回到源码目录
     cd "$current_dir"
     cd "$SRC_DIR"
-    
-    # 创建 MySQL 用户
-    #id mysql &>/dev/null || useradd -r -s /bin/false mysql
     
     # 创建必要的目录
     mkdir -p "${DATA_PATH}"
@@ -485,9 +483,9 @@ EOF
     
     log_info "MySQL database initialized successfully"
     # 创建 socket 目录并启动临时服务（如果还没启动）
-	mkdir -p /var/run/mysqld
-	chown mysql:mysql /var/run/mysqld
-	cat > /etc/tmpfiles.d/mysql.conf << EOF
+    mkdir -p /var/run/mysqld
+    chown mysql:mysql /var/run/mysqld
+    cat > /etc/tmpfiles.d/mysql.conf << EOF
 d /var/run/mysqld 0755 mysql mysql -
 EOF
     # 清理临时配置文件
@@ -517,7 +515,7 @@ WantedBy=multi-user.target
 EOF
     
     systemctl daemon-reload
-	 # 设置 MySQL root 密码
+    # 设置 MySQL root 密码
     log_info "Starting MySQL to set root password..."
     
     # 创建必要的运行时目录
@@ -569,6 +567,7 @@ install_php() {
         --with-freetype \
         --enable-gd \
         --with-jpeg \
+        --with-webp \
         --with-gettext \
         --with-mhash \
         --with-openssl \
@@ -577,7 +576,6 @@ install_php() {
         --with-pdo-sqlite \
         --with-pear \
         --enable-sockets \
-        --with-webp \
         --with-xsl \
         --with-zip \
         --with-zlib \
@@ -596,7 +594,6 @@ install_php() {
         --enable-sysvsem \
         --enable-sysvshm \
         --enable-wddx \
-        --with-png-dir \
         --with-zlib-dir \
         --with-tidy \
         --with-xmlrpc \
@@ -660,6 +657,152 @@ install_php() {
     log_info "Installing PHP..."
     make install
     
+    # ========== 开始：扩展完整性验证和修复 ==========
+    log_info "Verifying PHP extensions..."
+    
+    # 定义需要检查的关键扩展
+    CRITICAL_EXTENSIONS="gd pdo_mysql mysqli zip"
+    MISSING_EXTENSIONS=""
+    
+    # 检查扩展是否可用
+    for ext in $CRITICAL_EXTENSIONS; do
+        if ${INSTALL_PATH}/php/bin/php -m | grep -qi "^$ext$"; then
+            log_success "Extension '$ext' is enabled"
+        else
+            log_warn "Extension '$ext' is missing"
+            MISSING_EXTENSIONS="$MISSING_EXTENSIONS $ext"
+        fi
+    done
+    
+    # 如果有缺失的扩展，尝试修复
+    if [ -n "$MISSING_EXTENSIONS" ]; then
+        log_info "Attempting to fix missing extensions: $MISSING_EXTENSIONS"
+        
+        # 保存当前目录
+        local php_src_dir="$SRC_DIR/php-${PHP_VERSION}"
+        
+        for ext in $MISSING_EXTENSIONS; do
+            case $ext in
+                gd)
+                    log_info "Rebuilding GD extension..."
+                    cd "$php_src_dir/ext/gd"
+                    
+                    # 确保依赖库存在（CentOS专用修复）
+                    if [[ "$OS_ID" =~ (rhel|centos|rocky|almalinux) ]]; then
+                        # 重新安装GD依赖（某些情况可能缺失）
+                        dnf install -y libpng-devel libjpeg-turbo-devel freetype-devel libwebp-devel 2>/dev/null || true
+                    elif [[ "$OS_ID" =~ (debian|ubuntu) ]]; then
+                        apt install -y libpng-dev libjpeg-dev libfreetype6-dev libwebp-dev 2>/dev/null || true
+                    fi
+                    
+                    # 重新编译
+                    ${INSTALL_PATH}/php/bin/phpize
+                    # 尝试包含 --with-png 参数（PHP 8.4+）
+                    ./configure --with-php-config=${INSTALL_PATH}/php/bin/php-config \
+                        --with-jpeg \
+                        --with-freetype \
+                        --with-webp \
+                        --with-png 2>/dev/null || \
+                    ./configure --with-php-config=${INSTALL_PATH}/php/bin/php-config \
+                        --with-jpeg \
+                        --with-freetype \
+                        --with-webp
+                    
+                    make clean
+                    make -j$(nproc)
+                    make install
+                    
+                    # 创建配置文件
+                    mkdir -p ${INSTALL_PATH}/php/etc/php.d
+                    cat > ${INSTALL_PATH}/php/etc/php.d/20-gd.ini << 'EOF'
+; Enable gd extension
+extension=gd.so
+EOF
+                    log_success "GD extension rebuilt"
+                    ;;
+                    
+                pdo_mysql)
+                    log_info "Rebuilding pdo_mysql extension..."
+                    cd "$php_src_dir/ext/pdo_mysql"
+                    ${INSTALL_PATH}/php/bin/phpize
+                    ./configure --with-php-config=${INSTALL_PATH}/php/bin/php-config \
+                        --with-pdo-mysql="${INSTALL_PATH}/mysql"
+                    make clean
+                    make -j$(nproc)
+                    make install
+                    
+                    # 创建配置
+                    mkdir -p ${INSTALL_PATH}/php/etc/php.d
+                    cat > ${INSTALL_PATH}/php/etc/php.d/20-pdo_mysql.ini << 'EOF'
+extension=pdo_mysql.so
+EOF
+                    log_success "pdo_mysql extension rebuilt"
+                    ;;
+                    
+                mysqli)
+                    log_info "Rebuilding mysqli extension..."
+                    cd "$php_src_dir/ext/mysqli"
+                    ${INSTALL_PATH}/php/bin/phpize
+                    ./configure --with-php-config=${INSTALL_PATH}/php/bin/php-config \
+                        --with-mysqli="${INSTALL_PATH}/mysql/bin/mysql_config"
+                    make clean
+                    make -j$(nproc)
+                    make install
+                    
+                    # 创建配置
+                    mkdir -p ${INSTALL_PATH}/php/etc/php.d
+                    cat > ${INSTALL_PATH}/php/etc/php.d/20-mysqli.ini << 'EOF'
+extension=mysqli.so
+EOF
+                    log_success "mysqli extension rebuilt"
+                    ;;
+                    
+                zip)
+                    log_info "Rebuilding ZIP extension..."
+                    cd "$php_src_dir/ext/zip"
+                    ${INSTALL_PATH}/php/bin/phpize
+                    ./configure --with-php-config=${INSTALL_PATH}/php/bin/php-config \
+                        --with-zip
+                    make clean
+                    make -j$(nproc)
+                    make install
+                    
+                    mkdir -p ${INSTALL_PATH}/php/etc/php.d
+                    cat > ${INSTALL_PATH}/php/etc/php.d/20-zip.ini << 'EOF'
+extension=zip.so
+EOF
+                    log_success "ZIP extension rebuilt"
+                    ;;
+            esac
+        done
+        
+        # 返回主目录
+        cd "$php_src_dir"
+        
+        # 再次验证
+        log_info "Re-verifying extensions after fix..."
+        FINAL_MISSING=""
+        for ext in $CRITICAL_EXTENSIONS; do
+            if ${INSTALL_PATH}/php/bin/php -m | grep -qi "^$ext$"; then
+                log_success "Extension '$ext' is now enabled"
+            else
+                FINAL_MISSING="$FINAL_MISSING $ext"
+                log_error "Extension '$ext' is STILL missing after fix"
+            fi
+        done
+        
+        if [ -n "$FINAL_MISSING" ]; then
+            log_error "Critical extensions still missing:$FINAL_MISSING"
+            log_error "Please check compilation logs in $php_src_dir"
+            log_warn "You may need to manually install: ${INSTALL_PATH}/php/bin/php -m"
+        else
+            log_success "All critical extensions are properly enabled"
+        fi
+    else
+        log_success "All critical extensions are properly enabled"
+    fi
+    # ========== 结束：扩展验证和修复 ==========
+    
     # 返回到源码目录
     cd "$current_dir"
     cd "$SRC_DIR/php-${PHP_VERSION}"  # 进入 PHP 源码目录
@@ -697,11 +840,6 @@ EOF
     # 确保 PHP 目录存在
     mkdir -p "${INSTALL_PATH}/php/var/run"
     systemctl daemon-reload
-    # 验证扩展
-    log_info "Verifying PHP extensions..."
-    "${INSTALL_PATH}/php/bin/php" -m | grep -qi 'gd' && log_success "PHP GD: enabled" || log_warn "PHP GD: missing (check configure output above)"
-    "${INSTALL_PATH}/php/bin/php" -m | grep -qi 'dom' && log_success "PHP DOM: enabled" || log_warn "PHP DOM: missing"
-    "${INSTALL_PATH}/php/bin/php" -m | grep -qi 'xml' && log_success "PHP XML: enabled" || log_warn "PHP XML: missing"
     log_success "PHP installed successfully"
 }
 
@@ -709,9 +847,9 @@ EOF
 config_nginx_php() {
     log_info "Configuring Nginx to work with PHP..."
     cp "${SCRIPT_DIR}/include/enable-php.conf" /usr/local/nginx/conf
-	cp "${SCRIPT_DIR}/include/enable-php-pathinfo.conf" /usr/local/nginx/conf
-	cp "${SCRIPT_DIR}/include/fastcgi.conf" /usr/local/nginx/conf
-	cp "${SCRIPT_DIR}/include/pathinfo.conf" /usr/local/nginx/conf
+    cp "${SCRIPT_DIR}/include/enable-php-pathinfo.conf" /usr/local/nginx/conf
+    cp "${SCRIPT_DIR}/include/fastcgi.conf" /usr/local/nginx/conf
+    cp "${SCRIPT_DIR}/include/pathinfo.conf" /usr/local/nginx/conf
     # 备份原始配置
     cp "${INSTALL_PATH}/nginx/conf/nginx.conf" "${INSTALL_PATH}/nginx/conf/nginx.conf.bak"
     
@@ -745,7 +883,7 @@ http {
     include ${INSTALL_PATH}/nginx/conf/conf.d/*.conf;
 }
 EOF
-	
+    
     # 创建默认站点配置
     mkdir -p "${INSTALL_PATH}/nginx/conf/conf.d"
     cat > "${INSTALL_PATH}/nginx/conf/conf.d/default.conf" << EOF
@@ -781,7 +919,7 @@ create_lnmp_command() {
     log_info "Creating lnmp command..."
     
     #cat > /usr/local/bin/
-	cp "${SCRIPT_DIR}/include/lnmp" /usr/local/bin/
+    cp "${SCRIPT_DIR}/include/lnmp" /usr/local/bin/
     chmod +x /usr/local/bin/lnmp
     log_success "lnmp command created successfully"
 }
@@ -831,14 +969,14 @@ main() {
     install_nginx
     install_php
     config_nginx_php
-	install_mysql
+    install_mysql
     create_lnmp_command
     setup_env_path
     # 创建SSL目录
-	log_info "SSL_PATH: $SSL_PATH"
+    log_info "SSL_PATH: $SSL_PATH"
     mkdir -p "$SSL_PATH"
-	# 创建默认配置Diffie-Hellman参数
-	openssl dhparam -out ${SSL_PATH}/dhparam.pem 2048
+    # 创建默认配置Diffie-Hellman参数
+    openssl dhparam -out ${SSL_PATH}/dhparam.pem 2048
     log_success "LNMP installation completed!"
     log_info "To start services, run: lnmp start"
     log_info "Default website path: $WEB_PATH"
