@@ -785,13 +785,12 @@ create_lnmp_command() {
 setup_env_path() {
     log_info "Setting up environment variables..."
     cat > /etc/profile.d/lnmp.sh << 'EOF'
-# LNMP environment
-PATH=$PATH:/usr/local/php/bin:/usr/local/php/sbin:/usr/local/mysql/bin
-export PATH
+# LNMP environment (prepend to override system php/mysql)
+export PATH="/usr/local/php/bin:/usr/local/php/sbin:/usr/local/mysql/bin:$PATH"
 EOF
     chmod +x /etc/profile.d/lnmp.sh
     # 立即生效当前会话
-    export PATH="$PATH:${INSTALL_PATH}/php/bin:${INSTALL_PATH}/php/sbin:${INSTALL_PATH}/mysql/bin"
+    export PATH="${INSTALL_PATH}/php/bin:${INSTALL_PATH}/php/sbin:${INSTALL_PATH}/mysql/bin:$PATH"
     log_success "Environment variables set. Run 'source /etc/profile.d/lnmp.sh' for new sessions."
 }
 
