@@ -784,14 +784,23 @@ create_lnmp_command() {
 # 设置环境变量
 setup_env_path() {
     log_info "Setting up environment variables..."
-    cat > /etc/profile.d/lnmp.sh << 'EOF'
+    # 在 /usr/local/bin/ 下创建软链接（此目录在 sudo secure_path 中）
+    ln -sf "${INSTALL_PATH}/php/bin/php" /usr/local/bin/php
+    ln -sf "${INSTALL_PATH}/php/bin/phar" /usr/local/bin/phar
+    ln -sf "${INSTALL_PATH}/php/bin/phpize" /usr/local/bin/phpize
+    ln -sf "${INSTALL_PATH}/php/bin/php-config" /usr/local/bin/php-config
+    ln -sf "${INSTALL_PATH}/mysql/bin/mysql" /usr/local/bin/mysql
+    ln -sf "${INSTALL_PATH}/mysql/bin/mysqldump" /usr/local/bin/mysqldump
+    ln -sf "${INSTALL_PATH}/mysql/bin/mysqladmin" /usr/local/bin/mysqladmin
+    # profile 脚本（供新登录会话使用）
+    cat > /etc/profile.d/lnmp.sh << EOF
 # LNMP environment (prepend to override system php/mysql)
-export PATH="/usr/local/php/bin:/usr/local/php/sbin:/usr/local/mysql/bin:$PATH"
+export PATH="${INSTALL_PATH}/php/bin:${INSTALL_PATH}/php/sbin:${INSTALL_PATH}/mysql/bin:\$PATH"
 EOF
     chmod +x /etc/profile.d/lnmp.sh
     # 立即生效当前会话
     export PATH="${INSTALL_PATH}/php/bin:${INSTALL_PATH}/php/sbin:${INSTALL_PATH}/mysql/bin:$PATH"
-    log_success "Environment variables set. Run 'source /etc/profile.d/lnmp.sh' for new sessions."
+    log_success "Environment variables set."
 }
 
 # 主函数
