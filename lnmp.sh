@@ -169,7 +169,7 @@ install_dependencies() {
                 libXpm-devel gdbm-devel expat-devel \
                 libmaxminddb-devel libtirpc-devel libquadmath-devel \
                 libatomic ninja-build \
-                diffutils file perl-Data-Dumper rpcgen
+                diffutils file perl-Data-Dumper rpcgen php-gd php-xml
             ;;
         *)
             log_error "Unsupported OS: $OS_ID"
@@ -697,6 +697,11 @@ EOF
     # 确保 PHP 目录存在
     mkdir -p "${INSTALL_PATH}/php/var/run"
     systemctl daemon-reload
+    # 验证扩展
+    log_info "Verifying PHP extensions..."
+    "${INSTALL_PATH}/php/bin/php" -m | grep -qi 'gd' && log_success "PHP GD: enabled" || log_warn "PHP GD: missing (check configure output above)"
+    "${INSTALL_PATH}/php/bin/php" -m | grep -qi 'dom' && log_success "PHP DOM: enabled" || log_warn "PHP DOM: missing"
+    "${INSTALL_PATH}/php/bin/php" -m | grep -qi 'xml' && log_success "PHP XML: enabled" || log_warn "PHP XML: missing"
     log_success "PHP installed successfully"
 }
 
