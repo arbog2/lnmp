@@ -781,6 +781,20 @@ create_lnmp_command() {
     log_success "lnmp command created successfully"
 }
 
+# 设置环境变量
+setup_env_path() {
+    log_info "Setting up environment variables..."
+    cat > /etc/profile.d/lnmp.sh << 'EOF'
+# LNMP environment
+PATH=$PATH:/usr/local/php/bin:/usr/local/php/sbin:/usr/local/mysql/bin
+export PATH
+EOF
+    chmod +x /etc/profile.d/lnmp.sh
+    # 立即生效当前会话
+    export PATH="$PATH:${INSTALL_PATH}/php/bin:${INSTALL_PATH}/php/sbin:${INSTALL_PATH}/mysql/bin"
+    log_success "Environment variables set. Run 'source /etc/profile.d/lnmp.sh' for new sessions."
+}
+
 # 主函数
 main() {
     log_info "Starting LNMP installation on $OS_ID $OS_VERSION_ID..."
@@ -806,6 +820,7 @@ main() {
     config_nginx_php
 	install_mysql
     create_lnmp_command
+    setup_env_path
     # 创建SSL目录
 	log_info "SSL_PATH: $SSL_PATH"
     mkdir -p "$SSL_PATH"
