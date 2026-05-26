@@ -1,6 +1,6 @@
 # LNMP 一键安装脚本
 
-> 在 Debian 12/13 上编译安装 Nginx、MySQL、PHP 的自动化脚本
+> 在 Debian 12/13、RHEL/CentOS 9+ 上编译安装 Nginx、MySQL、PHP 的自动化脚本
 
 ## 组件版本
 
@@ -12,7 +12,7 @@
 
 ## 环境要求
 
-- 操作系统：Debian 12 / 13
+- 操作系统：Debian 12 / 13、RHEL / CentOS 9+
 - 磁盘空间：≥ 3GB
 - 内存：≥ 2GB
 - 需要 root 权限执行
@@ -28,6 +28,10 @@ cd lnmp
 chmod +x lnmp.sh
 ./lnmp.sh
 ```
+
+执行安装时会提示输入 MySQL root 密码：
+- 输入密码 → 使用自定义密码
+- 直接回车 → 使用默认密码 `gzmcisco`
 
 ### 自定义参数
 
@@ -51,7 +55,7 @@ MYSQL_ROOT_PASSWORD=your_password \
 | `SSL_PATH` | SSL 证书目录 | /usr/local/nginx/conf/ssl |
 | `DATA_PATH` | MySQL 数据目录 | /home/mysql |
 | `INSTALL_PATH` | 安装前缀 | /usr/local |
-| `MYSQL_ROOT_PASSWORD` | MySQL root 密码 | gzmcisco |
+| `MYSQL_ROOT_PASSWORD` | MySQL root 密码（安装时可交互输入） | gzmcisco |
 
 ## 安装路径
 
