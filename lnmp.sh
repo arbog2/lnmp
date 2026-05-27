@@ -8,7 +8,8 @@
 # - 检查本地源码，不存在则下载
 # - 创建 lnmp 系统命令
 # - 检查磁盘和内存空间
-# - 自动验证和修复PHP扩展（GD、pdo_mysql、mysqli、zip等）
+# - 自动验证和修复PHP扩展（GD、pdo_mysql、mysqli、zip、dom等）
+# - 自动移除系统PHP避免冲突
 # =============================================================================
 
 set -e
@@ -112,6 +113,35 @@ check_memory() {
         log_error "Not enough memory. Required: ${required_memory_mb}MB, Available: ${available_memory_mb}MB"
         exit 1
     fi
+}
+
+# 移除系统自带的 PHP（避免冲突）
+remove_system_php() {
+    log_info "Checking for system PHP packages to avoid conflicts..."
+    
+    case "$OS_ID" in
+        debian|ubuntu)
+            if dpkg -l | grep -q php; then
+                log_info "Removing system PHP packages..."
+                apt remove --purge php* -y 2>/dev/null || true
+                apt autoremove -y 2>/dev/null || true
+                apt autoclean -y 2>/dev/null || true
+                log_success "System PHP packages removed"
+            else
+                log_info "No system PHP packages found"
+            fi
+            ;;
+        rhel|centos|rocky|almalinux)
+            if rpm -qa | grep -q php; then
+                log_info "Removing system PHP packages..."
+                dnf remove -y php* 2>/dev/null || true
+                dnf autoremove -y 2>/dev/null || true
+                log_success "System PHP packages removed"
+            else
+                log_info "No system PHP packages found"
+            fi
+            ;;
+    esac
 }
 
 # 安装系统依赖
@@ -543,6 +573,9 @@ EOF
 install_php() {
     log_info "Starting PHP installation..."
     
+    # 移除系统自带的 PHP
+    remove_system_php
+    
     local php_filename="php-${PHP_VERSION}.tar.gz"
     local php_url="https://www.php.net/distributions/${php_filename}"
     
@@ -610,6 +643,9 @@ install_php() {
         --enable-spl \
         --enable-ctype \
         --enable-dom \
+        --enable-xml \
+        --enable-xmlreader \
+        --enable-xmlwriter \
         --enable-fileinfo \
         --enable-filter \
         --enable-iconv \
@@ -661,7 +697,7 @@ install_php() {
     log_info "Verifying PHP extensions..."
     
     # 定义需要检查的关键扩展
-    CRITICAL_EXTENSIONS="gd pdo_mysql mysqli zip"
+    CRITICAL_EXTENSIONS="gd pdo_mysql mysqli zip dom simplexml xml xmlreader xmlwriter"
     MISSING_EXTENSIONS=""
     
     # 检查扩展是否可用
@@ -773,6 +809,73 @@ extension=zip.so
 EOF
                     log_success "ZIP extension rebuilt"
                     ;;
+                    
+                dom|simplexml|xml|xmlreader|xmlwriter)
+                    log_info "Rebuilding XML/DOM extension: $ext..."
+                    
+                    # 重新编译 dom 扩展
+                    cd "$php_src_dir/ext/dom"
+                    ${INSTALL_PATH}/php/bin/phpize
+                    ./configure --with-php-config=${INSTALL_PATH}/php/bin/php-config \
+                        --with-libxml-dir=/usr
+                    make clean
+                    make -j$(nproc)
+                    make install
+                    
+                    mkdir -p ${INSTALL_PATH}/php/etc/php.d
+                    cat > ${INSTALL_PATH}/php/etc/php.d/20-dom.ini << 'EOF'
+extension=dom.so
+EOF
+                    
+                    # 重新编译 simplexml 扩展
+                    cd "$php_src_dir/ext/simplexml"
+                    ${INSTALL_PATH}/php/bin/phpize
+                    ./configure --with-php-config=${INSTALL_PATH}/php/bin/php-config
+                    make clean
+                    make -j$(nproc)
+                    make install
+                    cat > ${INSTALL_PATH}/php/etc/php.d/20-simplexml.ini << 'EOF'
+extension=simplexml.so
+EOF
+                    
+                    # 重新编译 xml 扩展
+                    cd "$php_src_dir/ext/xml"
+                    ${INSTALL_PATH}/php/bin/phpize
+                    ./configure --with-php-config=${INSTALL_PATH}/php/bin/php-config \
+                        --with-libxml-dir=/usr
+                    make clean
+                    make -j$(nproc)
+                    make install
+                    cat > ${INSTALL_PATH}/php/etc/php.d/20-xml.ini << 'EOF'
+extension=xml.so
+EOF
+                    
+                    # 重新编译 xmlreader 扩展
+                    cd "$php_src_dir/ext/xmlreader"
+                    ${INSTALL_PATH}/php/bin/phpize
+                    ./configure --with-php-config=${INSTALL_PATH}/php/bin/php-config \
+                        --with-libxml-dir=/usr
+                    make clean
+                    make -j$(nproc)
+                    make install
+                    cat > ${INSTALL_PATH}/php/etc/php.d/20-xmlreader.ini << 'EOF'
+extension=xmlreader.so
+EOF
+                    
+                    # 重新编译 xmlwriter 扩展
+                    cd "$php_src_dir/ext/xmlwriter"
+                    ${INSTALL_PATH}/php/bin/phpize
+                    ./configure --with-php-config=${INSTALL_PATH}/php/bin/php-config \
+                        --with-libxml-dir=/usr
+                    make clean
+                    make -j$(nproc)
+                    make install
+                    cat > ${INSTALL_PATH}/php/etc/php.d/20-xmlwriter.ini << 'EOF'
+extension=xmlwriter.so
+EOF
+                    
+                    log_success "XML/DOM extension rebuilt"
+                    ;;
             esac
         done
         
@@ -813,6 +916,19 @@ EOF
     # 复制 PHP 配置文件
     cp php.ini-production "${INSTALL_PATH}/php/etc/php.ini"
     
+    # 启用 OPcache（推荐）
+    cat >> "${INSTALL_PATH}/php/etc/php.ini" << EOF
+
+[opcache]
+zend_extension=opcache.so
+opcache.enable=1
+opcache.memory_consumption=128
+opcache.interned_strings_buffer=8
+opcache.max_accelerated_files=10000
+opcache.revalidate_freq=2
+opcache.fast_shutdown=1
+EOF
+    
     # 创建 PHP-FPM 服务文件
     cat > /lib/systemd/system/php-fpm.service << EOF
 [Unit]
@@ -821,7 +937,6 @@ After=network.target
 
 [Service]
 Type=simple
-# 删除 PIDFile 这行
 ExecStart=${INSTALL_PATH}/php/sbin/php-fpm --nodaemonize --fpm-config ${INSTALL_PATH}/php/etc/php-fpm.conf
 ExecReload=/bin/kill -USR2 \$MAINPID
 
@@ -837,6 +952,7 @@ EOF
     sed -i "s/;listen.mode = 0660/listen.mode = 0666/" "${INSTALL_PATH}/php/etc/php-fpm.d/www.conf"
     sed -i "s/user = nobody/user = www-data/" "${INSTALL_PATH}/php/etc/php-fpm.d/www.conf"
     sed -i "s/group = nobody/group = www-data/" "${INSTALL_PATH}/php/etc/php-fpm.d/www.conf"
+    
     # 确保 PHP 目录存在
     mkdir -p "${INSTALL_PATH}/php/var/run"
     systemctl daemon-reload
@@ -846,12 +962,37 @@ EOF
 # 配置 Nginx 与 PHP
 config_nginx_php() {
     log_info "Configuring Nginx to work with PHP..."
-    cp "${SCRIPT_DIR}/include/enable-php.conf" /usr/local/nginx/conf
-    cp "${SCRIPT_DIR}/include/enable-php-pathinfo.conf" /usr/local/nginx/conf
-    cp "${SCRIPT_DIR}/include/fastcgi.conf" /usr/local/nginx/conf
-    cp "${SCRIPT_DIR}/include/pathinfo.conf" /usr/local/nginx/conf
+    
+    # 创建必要的 include 目录
+    mkdir -p "${INSTALL_PATH}/nginx/conf"
+    
+    # 创建 fastcgi_params 文件（如果不存在）
+    if [[ ! -f "${INSTALL_PATH}/nginx/conf/fastcgi_params" ]]; then
+        cat > "${INSTALL_PATH}/nginx/conf/fastcgi_params" << 'EOF'
+fastcgi_param  QUERY_STRING       $query_string;
+fastcgi_param  REQUEST_METHOD     $request_method;
+fastcgi_param  CONTENT_TYPE       $content_type;
+fastcgi_param  CONTENT_LENGTH     $content_length;
+fastcgi_param  SCRIPT_NAME        $fastcgi_script_name;
+fastcgi_param  REQUEST_URI        $request_uri;
+fastcgi_param  DOCUMENT_URI       $document_uri;
+fastcgi_param  DOCUMENT_ROOT      $document_root;
+fastcgi_param  SERVER_PROTOCOL    $server_protocol;
+fastcgi_param  REQUEST_SCHEME     $scheme;
+fastcgi_param  HTTPS              $https if_not_empty;
+fastcgi_param  GATEWAY_INTERFACE  CGI/1.1;
+fastcgi_param  SERVER_SOFTWARE    nginx/$nginx_version;
+fastcgi_param  REMOTE_ADDR        $remote_addr;
+fastcgi_param  REMOTE_PORT        $remote_port;
+fastcgi_param  SERVER_ADDR        $server_addr;
+fastcgi_param  SERVER_PORT        $server_port;
+fastcgi_param  SERVER_NAME        $server_name;
+fastcgi_param  REDIRECT_STATUS    200;
+EOF
+    fi
+    
     # 备份原始配置
-    cp "${INSTALL_PATH}/nginx/conf/nginx.conf" "${INSTALL_PATH}/nginx/conf/nginx.conf.bak"
+    cp "${INSTALL_PATH}/nginx/conf/nginx.conf" "${INSTALL_PATH}/nginx/conf/nginx.conf.bak" 2>/dev/null || true
     
     # 创建新的 Nginx 配置
     cat > "${INSTALL_PATH}/nginx/conf/nginx.conf" << EOF
@@ -918,8 +1059,52 @@ EOF
 create_lnmp_command() {
     log_info "Creating lnmp command..."
     
-    #cat > /usr/local/bin/
-    cp "${SCRIPT_DIR}/include/lnmp" /usr/local/bin/
+    cat > /usr/local/bin/lnmp << 'EOF'
+#!/bin/bash
+
+LNMP_PATH="/usr/local"
+
+case "$1" in
+    start)
+        echo "Starting LNMP services..."
+        systemctl start nginx
+        systemctl start php-fpm
+        systemctl start mysql
+        echo "LNMP services started"
+        ;;
+    stop)
+        echo "Stopping LNMP services..."
+        systemctl stop nginx
+        systemctl stop php-fpm
+        systemctl stop mysql
+        echo "LNMP services stopped"
+        ;;
+    restart)
+        echo "Restarting LNMP services..."
+        systemctl restart nginx
+        systemctl restart php-fpm
+        systemctl restart mysql
+        echo "LNMP services restarted"
+        ;;
+    status)
+        echo "=== LNMP Services Status ==="
+        systemctl status nginx --no-pager
+        systemctl status php-fpm --no-pager
+        systemctl status mysql --no-pager
+        ;;
+    reload)
+        echo "Reloading LNMP services..."
+        systemctl reload nginx
+        systemctl reload php-fpm
+        echo "LNMP services reloaded"
+        ;;
+    *)
+        echo "Usage: lnmp {start|stop|restart|reload|status}"
+        exit 1
+        ;;
+esac
+EOF
+    
     chmod +x /usr/local/bin/lnmp
     log_success "lnmp command created successfully"
 }
@@ -927,22 +1112,30 @@ create_lnmp_command() {
 # 设置环境变量
 setup_env_path() {
     log_info "Setting up environment variables..."
-    # 在 /usr/local/bin/ 下创建软链接（此目录在 sudo secure_path 中）
-    ln -sf "${INSTALL_PATH}/php/bin/php" /usr/local/bin/php
-    ln -sf "${INSTALL_PATH}/php/bin/phar" /usr/local/bin/phar
-    ln -sf "${INSTALL_PATH}/php/bin/phpize" /usr/local/bin/phpize
-    ln -sf "${INSTALL_PATH}/php/bin/php-config" /usr/local/bin/php-config
-    ln -sf "${INSTALL_PATH}/mysql/bin/mysql" /usr/local/bin/mysql
-    ln -sf "${INSTALL_PATH}/mysql/bin/mysqldump" /usr/local/bin/mysqldump
-    ln -sf "${INSTALL_PATH}/mysql/bin/mysqladmin" /usr/local/bin/mysqladmin
+    
+    # 强制覆盖系统命令（创建符号链接到 /usr/bin）
+    ln -sf "${INSTALL_PATH}/php/bin/php" /usr/bin/php
+    ln -sf "${INSTALL_PATH}/php/bin/phar" /usr/bin/phar
+    ln -sf "${INSTALL_PATH}/php/bin/phpize" /usr/bin/phpize
+    ln -sf "${INSTALL_PATH}/php/bin/php-config" /usr/bin/php-config
+    ln -sf "${INSTALL_PATH}/php/sbin/php-fpm" /usr/sbin/php-fpm
+    ln -sf "${INSTALL_PATH}/mysql/bin/mysql" /usr/bin/mysql
+    ln -sf "${INSTALL_PATH}/mysql/bin/mysqldump" /usr/bin/mysqldump
+    ln -sf "${INSTALL_PATH}/mysql/bin/mysqladmin" /usr/bin/mysqladmin
+    
+    # 删除可能存在的冲突符号链接
+    rm -f /usr/local/bin/php 2>/dev/null || true
+    
     # profile 脚本（供新登录会话使用）
     cat > /etc/profile.d/lnmp.sh << EOF
 # LNMP environment (prepend to override system php/mysql)
 export PATH="${INSTALL_PATH}/php/bin:${INSTALL_PATH}/php/sbin:${INSTALL_PATH}/mysql/bin:\$PATH"
 EOF
     chmod +x /etc/profile.d/lnmp.sh
+    
     # 立即生效当前会话
     export PATH="${INSTALL_PATH}/php/bin:${INSTALL_PATH}/php/sbin:${INSTALL_PATH}/mysql/bin:$PATH"
+    
     log_success "Environment variables set."
 }
 
@@ -962,8 +1155,8 @@ main() {
     
     check_root
     detect_os
-    check_disk_space 3 # 增加到 3GB 空间（考虑 MySQL 8.4 编译需求）
-    check_memory 1500  # 1.5GB 内存（MySQL 8.4 编译需求）
+    check_disk_space 3
+    check_memory 1500
     
     # 交互设置 MySQL root 密码
     read -p "请输入 MySQL root 密码 (直接回车使用默认密码 ${MYSQL_ROOT_PASSWORD}): " input_password
@@ -979,17 +1172,47 @@ main() {
     install_mysql
     create_lnmp_command
     setup_env_path
+    
     # 创建SSL目录
-    log_info "SSL_PATH: $SSL_PATH"
+    log_info "Creating SSL directory: $SSL_PATH"
     mkdir -p "$SSL_PATH"
+    
     # 创建默认配置Diffie-Hellman参数
-    openssl dhparam -out ${SSL_PATH}/dhparam.pem 2048
+    if [[ ! -f "${SSL_PATH}/dhparam.pem" ]]; then
+        log_info "Generating DH parameters (this may take a while)..."
+        openssl dhparam -out ${SSL_PATH}/dhparam.pem 2048
+    fi
+    
+    # 启动所有服务
+    log_info "Starting LNMP services..."
+    systemctl start nginx
+    systemctl start php-fpm
+    systemctl start mysql
+    
+    # 验证服务状态
+    sleep 2
+    log_info "Service status:"
+    systemctl is-active nginx && log_success "Nginx is running" || log_error "Nginx is not running"
+    systemctl is-active php-fpm && log_success "PHP-FPM is running" || log_error "PHP-FPM is not running"
+    systemctl is-active mysql && log_success "MySQL is running" || log_error "MySQL is not running"
+    
+    # 最终验证 PHP 扩展
+    log_info "Final PHP extension verification:"
+    ${INSTALL_PATH}/php/bin/php -m | grep -E "gd|dom|pdo_mysql|mysqli|zip" | sort | uniq
+    
     log_success "LNMP installation completed!"
-    log_info "To start services, run: lnmp start"
+    log_info "============================================"
+    log_info "To start/stop/restart services, run: lnmp {start|stop|restart}"
     log_info "Default website path: $WEB_PATH"
     log_info "Nginx config path: ${INSTALL_PATH}/nginx/conf"
     log_info "PHP config path: ${INSTALL_PATH}/php/etc"
+    log_info "PHP-FPM config: ${INSTALL_PATH}/php/etc/php-fpm.conf"
     log_info "MySQL data path: $DATA_PATH"
+    log_info "MySQL root password: $MYSQL_ROOT_PASSWORD"
+    log_info "============================================"
+    log_info "Testing PHP:"
+    echo "<?php phpinfo(); ?>" > ${WEB_PATH}/info.php
+    log_info "Visit http://your-server/info.php to verify PHP installation"
 }
 
 # 执行主函数
