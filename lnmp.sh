@@ -353,6 +353,7 @@ WantedBy=multi-user.target
 EOF
     
     systemctl daemon-reload
+    systemctl enable nginx
     log_success "Nginx installed successfully"
 }
 
@@ -545,6 +546,7 @@ WantedBy=multi-user.target
 EOF
     
     systemctl daemon-reload
+    systemctl enable mysql
     # 设置 MySQL root 密码
     log_info "Starting MySQL to set root password..."
     
@@ -956,6 +958,7 @@ EOF
     # 确保 PHP 目录存在
     mkdir -p "${INSTALL_PATH}/php/var/run"
     systemctl daemon-reload
+    systemctl enable php-fpm
     log_success "PHP installed successfully"
 }
 
