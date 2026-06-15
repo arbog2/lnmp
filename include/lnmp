@@ -5,8 +5,8 @@
 
 NGINX_CONF_DIR="/usr/local/nginx/conf/conf.d"
 WEB_ROOT="/home/wwwroot"
-USER="www"
-GROUP="www"
+USER="www-data"
+GROUP="www-data"
 
 addhost()
 {

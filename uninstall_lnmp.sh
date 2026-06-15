@@ -119,10 +119,10 @@ uninstall_nginx() {
         fi
     fi
     
-    read -p "是否删除系统 www 用户? (y/N): " del_user
+    read -p "是否删除系统 www-data 用户? (y/N): " del_user
     if [[ "$del_user" =~ ^[Yy]$ ]]; then
-        userdel www 2>/dev/null && log_success "已删除 www 用户" || log_warn "www 用户不存在或无法删除"
-        groupdel www 2>/dev/null && log_success "已删除 www 用户组" || log_warn "www 用户组不存在或无法删除"
+        userdel www-data 2>/dev/null && log_success "已删除 www-data 用户" || log_warn "www-data 用户不存在或无法删除"
+        groupdel www-data 2>/dev/null && log_success "已删除 www-data 用户组" || log_warn "www-data 用户组不存在或无法删除"
     fi
     
     systemctl daemon-reload

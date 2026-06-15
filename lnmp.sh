@@ -290,28 +290,27 @@ install_nginx() {
     # 返回到源码目录
     cd "$current_dir"
     cd "$SRC_DIR"
-    if getent group www >/dev/null 2>&1; then
-        echo "组 www 已存在，跳过创建"
+    if getent group www-data >/dev/null 2>&1; then
+        echo "组 www-data 已存在，跳过创建"
     else
-        /usr/sbin/groupadd www
+        /usr/sbin/groupadd www-data
         if [ $? -eq 0 ]; then
-            echo "组 www 创建成功"
+            echo "组 www-data 创建成功"
         else
-            echo "组 www 创建失败，退出"
+            echo "组 www-data 创建失败，退出"
             exit 1
         fi
     fi
 
-    # 创建用户 www（如不存在）
-    if getent passwd www >/dev/null 2>&1; then
-        echo "用户 www 已存在，跳过创建"
+    # 创建用户 www-data（如不存在）
+    if getent passwd www-data >/dev/null 2>&1; then
+        echo "用户 www-data 已存在，跳过创建"
     else
-        # 常用选项：主组 www，禁止登录 shell，创建家目录 /home/www
-        /usr/sbin/useradd -s /sbin/nologin -g www www
+        /usr/sbin/useradd -s /sbin/nologin -g www-data www-data
         if [ $? -eq 0 ]; then
-            echo "用户 www 创建成功"
+            echo "用户 www-data 创建成功"
         else
-            echo "用户 www 创建失败"
+            echo "用户 www-data 创建失败"
             exit 1
         fi
     fi
@@ -320,7 +319,7 @@ install_nginx() {
     # 创建默认网站目录
     mkdir -p "${WEB_PATH}"
     chmod +w "${WEB_PATH}"
-    chown -R www:www "$WEB_PATH"
+    chown -R www-data:www-data "$WEB_PATH"
     cat >$WEB_PATH/.user.ini<<EOF
 open_basedir=$WEB_PATH:/tmp/:/proc/
 EOF
@@ -967,7 +966,7 @@ EOF
     
     # 创建新的 Nginx 配置
     cat > "${INSTALL_PATH}/nginx/conf/nginx.conf" << EOF
-user  www www;
+user  www-data www-data;
 worker_processes  auto;
 error_log  ${LOG_PATH}/error.log warn;
 pid        /var/run/nginx.pid;
@@ -1030,54 +1029,9 @@ EOF
 create_lnmp_command() {
     log_info "Creating lnmp command..."
     
-    cat > /usr/local/bin/lnmp << 'EOF'
-#!/bin/bash
-
-LNMP_PATH="/usr/local"
-
-case "$1" in
-    start)
-        echo "Starting LNMP services..."
-        systemctl start nginx
-        systemctl start php-fpm
-        systemctl start mysql
-        echo "LNMP services started"
-        ;;
-    stop)
-        echo "Stopping LNMP services..."
-        systemctl stop nginx
-        systemctl stop php-fpm
-        systemctl stop mysql
-        echo "LNMP services stopped"
-        ;;
-    restart)
-        echo "Restarting LNMP services..."
-        systemctl restart nginx
-        systemctl restart php-fpm
-        systemctl restart mysql
-        echo "LNMP services restarted"
-        ;;
-    status)
-        echo "=== LNMP Services Status ==="
-        systemctl status nginx --no-pager
-        systemctl status php-fpm --no-pager
-        systemctl status mysql --no-pager
-        ;;
-    reload)
-        echo "Reloading LNMP services..."
-        systemctl reload nginx
-        systemctl reload php-fpm
-        echo "LNMP services reloaded"
-        ;;
-    *)
-        echo "Usage: lnmp {start|stop|restart|reload|status}"
-        exit 1
-        ;;
-esac
-EOF
-    
+    cp "${SCRIPT_DIR}/include/lnmp" /usr/local/bin/lnmp
     chmod +x /usr/local/bin/lnmp
-    log_success "lnmp command created successfully"
+    log_success "lnmp command created successfully (with add/del support)"
 }
 
 # 设置环境变量
