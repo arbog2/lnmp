@@ -607,7 +607,8 @@ install_php() {
         --with-mhash \
         --with-openssl \
         --enable-pcntl \
-        --with-pdo-mysql \
+        --with-pdo-mysql=mysqlnd \
+        --with-mysqli=mysqlnd \
         --with-pdo-sqlite \
         --with-pear \
         --enable-sockets \
@@ -621,21 +622,15 @@ install_php() {
         --enable-intl \
         --enable-mbstring \
         --enable-opcache \
-        --enable-pcntl \
         --enable-shmop \
         --enable-soap \
-        --enable-sockets \
         --enable-sysvmsg \
         --enable-sysvsem \
         --enable-sysvshm \
-        --enable-wddx \
-        --with-zlib-dir \
         --with-tidy \
         --with-xmlrpc \
         --with-readline \
-        --enable-mysqlnd \
-        --with-mysqli=mysqlnd \
-        --with-pdo-mysql=mysqlnd \
+        --with-libedit \
         --enable-embedded-mysqli \
         --with-iconv \
         --with-libxml \
@@ -654,40 +649,13 @@ install_php() {
         --enable-json \
         --enable-libxml \
         --enable-mbregex \
-        --enable-mbstring \
         --enable-mysqlnd \
         --enable-pdo \
         --enable-phar \
         --enable-posix \
         --enable-tokenizer \
-        --with-xml \
         --with-cdb \
-        --with-bz2 \
-        --with-curl \
-        --enable-ctype \
-        --enable-dom \
-        --enable-fileinfo \
-        --enable-filter \
-        --enable-hash \
-        --enable-json \
-        --enable-libxml \
-        --enable-mbregex \
-        --enable-mbstring \
-        --enable-mysqlnd \
-        --enable-pdo \
-        --enable-phar \
-        --enable-posix \
-        --enable-session \
-        --enable-simplexml \
-        --enable-sockets \
-        --enable-spl \
-        --enable-tokenizer \
-        --enable-xml \
-        --with-libxml \
-        --with-zlib \
-        --with-openssl \
-        --with-readline \
-        --with-libedit
+        --with-bz2
     
     log_info "Compiling PHP..."
     make -j$(nproc)
@@ -1185,6 +1153,49 @@ main() {
         log_info "Generating DH parameters (this may take a while)..."
         openssl dhparam -out ${SSL_PATH}/dhparam.pem 2048
     fi
+    
+    # 配置日志轮转
+    log_info "Configuring log rotation..."
+    cat > /etc/logrotate.d/lnmp << 'EOF'
+/home/wwwlogs/*.log {
+    daily
+    missingok
+    rotate 30
+    compress
+    delaycompress
+    notifempty
+    create 644 www www
+    sharedscripts
+    postrotate
+        [ -f /var/run/nginx.pid ] && kill -USR1 $(cat /var/run/nginx.pid) 2>/dev/null || true
+    endscript
+}
+
+/usr/local/nginx/logs/*.log {
+    daily
+    missingok
+    rotate 30
+    compress
+    delaycompress
+    notifempty
+    create 644 www www
+    sharedscripts
+    postrotate
+        [ -f /var/run/nginx.pid ] && kill -USR1 $(cat /var/run/nginx.pid) 2>/dev/null || true
+    endscript
+}
+
+/usr/local/mysql/logs/*.log {
+    daily
+    missingok
+    rotate 30
+    compress
+    delaycompress
+    notifempty
+    create 644 mysql mysql
+}
+EOF
+    log_success "Log rotation configured"
     
     # 启动所有服务
     log_info "Starting LNMP services..."
