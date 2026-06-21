@@ -282,10 +282,10 @@ install_nginx() {
         --with-http_v2_module
     
     log_info "Compiling Nginx..."
-    make -j$(nproc)
+    make -j$(nproc) || { log_error "Nginx compilation failed"; exit 1; }
     
     log_info "Installing Nginx..."
-    make install
+    make install || { log_error "Nginx installation failed"; exit 1; }
     
     # 返回到源码目录
     cd "$current_dir"
@@ -325,7 +325,7 @@ open_basedir=$WEB_PATH:/tmp/:/proc/
 EOF
         chmod 644 ${WEB_PATH}/.user.ini
         chattr +i ${WEB_PATH}/.user.ini
-        cat >>/usr/local/nginx/conf/fastcgi.conf<<EOF
+        cat >>${INSTALL_PATH}/nginx/conf/fastcgi.conf<<EOF
 fastcgi_param PHP_ADMIN_VALUE "open_basedir=\$document_root/:/tmp/:/proc/";
 EOF
     echo "<h1>Welcome to LNMP on Debian!</h1><p>Nginx is running.</p>" > "$WEB_PATH/index.html"
@@ -419,10 +419,10 @@ install_mysql() {
         -DWITH_EDITLINE=system
     
     log_info "Compiling MySQL (this may take a while)..."
-    make -j2
+    make -j2 || { log_error "MySQL compilation failed"; exit 1; }
     
     log_info "Installing MySQL..."
-    make install
+    make install || { log_error "MySQL installation failed"; exit 1; }
     
     # 返回到源码目录
     cd "$current_dir"
@@ -535,7 +535,7 @@ ExecStartPre=/bin/mkdir -p /home/mysql
 ExecStartPre=/bin/chown mysql:mysql /home/mysql
 ExecStartPre=/bin/mkdir -p /var/run/mysqld
 ExecStartPre=/bin/chown mysql:mysql /var/run/mysqld
-ExecStart=/usr/local/mysql/bin/mysqld --defaults-file=/etc/mysql/my.cnf
+ExecStart=${INSTALL_PATH}/mysql/bin/mysqld --defaults-file=/etc/mysql/my.cnf
 TimeoutSec=300
 Restart=on-failure
 RestartSec=10
@@ -555,7 +555,11 @@ EOF
     
     # 启动 MySQL
     systemctl start mysql
-    sleep 5  # 等待 MySQL 完全启动
+    log_info "Waiting for MySQL to be ready..."
+    if ! wait_for_mysql; then
+        log_error "MySQL startup timeout, check logs: ${INSTALL_PATH}/mysql/logs/error.log"
+        exit 1
+    fi
 
     # 设置密码（空密码登录）
     if ${INSTALL_PATH}/mysql/bin/mysql -u root --socket=/var/run/mysqld/mysqld.sock -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';" 2>/dev/null; then
@@ -568,6 +572,20 @@ EOF
     systemctl restart mysql
 
     log_success "MySQL installed successfully"
+}
+
+# 等待 MySQL 就绪
+wait_for_mysql() {
+    local timeout=60
+    local count=0
+    while ! ${INSTALL_PATH}/mysql/bin/mysqladmin ping --socket=/var/run/mysqld/mysqld.sock -u root --silent 2>/dev/null; do
+        sleep 1
+        count=$((count + 1))
+        if [[ $count -ge $timeout ]]; then
+            log_error "MySQL failed to start within ${timeout}s"
+            return 1
+        fi
+    done
 }
 
 # 编译安装 PHP
@@ -657,10 +675,10 @@ install_php() {
         --with-bz2
     
     log_info "Compiling PHP..."
-    make -j$(nproc)
+    make -j$(nproc) || { log_error "PHP compilation failed"; exit 1; }
     
     log_info "Installing PHP..."
-    make install
+    make install || { log_error "PHP installation failed"; exit 1; }
     
     # ========== 开始：扩展完整性验证和修复 ==========
     log_info "Verifying PHP extensions..."
@@ -1118,21 +1136,7 @@ main() {
     compress
     delaycompress
     notifempty
-    create 644 www www
-    sharedscripts
-    postrotate
-        [ -f /var/run/nginx.pid ] && kill -USR1 $(cat /var/run/nginx.pid) 2>/dev/null || true
-    endscript
-}
-
-/usr/local/nginx/logs/*.log {
-    daily
-    missingok
-    rotate 30
-    compress
-    delaycompress
-    notifempty
-    create 644 www www
+    create 644 www-data www-data
     sharedscripts
     postrotate
         [ -f /var/run/nginx.pid ] && kill -USR1 $(cat /var/run/nginx.pid) 2>/dev/null || true
@@ -1157,8 +1161,18 @@ EOF
     systemctl start php-fpm
     systemctl start mysql
     
+    # 等待服务启动
+    log_info "Waiting for services to start..."
+    for i in $(seq 1 10); do
+        if systemctl is-active nginx >/dev/null 2>&1 && \
+           systemctl is-active php-fpm >/dev/null 2>&1 && \
+           systemctl is-active mysql >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+    done
+    
     # 验证服务状态
-    sleep 2
     log_info "Service status:"
     systemctl is-active nginx && log_success "Nginx is running" || log_error "Nginx is not running"
     systemctl is-active php-fpm && log_success "PHP-FPM is running" || log_error "PHP-FPM is not running"
