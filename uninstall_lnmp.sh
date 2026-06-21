@@ -16,7 +16,7 @@ PHP_PATH="${INSTALL_PATH}/php"
 WEB_PATH="/home/wwwroot"
 LOG_PATH="/home/wwwlogs"
 DATA_PATH="/home/mysql"
-SSL_PATH="/usr/local/nginx/conf/ssl"
+SSL_PATH="${INSTALL_PATH}/nginx/conf/ssl"
 MYSQL_CNF="/etc/mysql/my.cnf"
 LNMP_CMD="/usr/local/bin/lnmp"
 LOGROTATE_CONF="/etc/logrotate.d/lnmp"
@@ -44,7 +44,8 @@ check_root() {
 # 停止并禁用服务
 stop_service() {
     local service=$1
-    if systemctl list-units --full -all 2>/dev/null | grep -q "${service}.service"; then
+    if systemctl is-enabled "${service}" >/dev/null 2>&1 || \
+       systemctl is-active "${service}" >/dev/null 2>&1; then
         log_info "停止 ${service} 服务..."
         systemctl stop "${service}" 2>/dev/null || true
         systemctl disable "${service}" 2>/dev/null || true
@@ -57,20 +58,28 @@ remove_service_file() {
     local service_file_lib="/lib/systemd/system/${service_name}.service"
     local service_file_etc="/etc/systemd/system/${service_name}.service"
     local link_target="/etc/systemd/system/multi-user.target.wants/${service_name}.service"
+    local changed=false
     
     if [[ -e "$service_file_lib" ]]; then
         rm -f "$service_file_lib"
         log_success "已删除: $service_file_lib"
+        changed=true
     fi
     
     if [[ -e "$service_file_etc" ]]; then
         rm -f "$service_file_etc"
         log_success "已删除: $service_file_etc"
+        changed=true
     fi
     
     if [[ -L "$link_target" ]]; then
         rm -f "$link_target"
         log_success "已删除软链接: $link_target"
+        changed=true
+    fi
+    
+    if [[ "$changed" = true ]]; then
+        systemctl daemon-reload
     fi
 }
 
@@ -121,8 +130,12 @@ uninstall_nginx() {
     
     read -p "是否删除系统 www-data 用户? (y/N): " del_user
     if [[ "$del_user" =~ ^[Yy]$ ]]; then
-        userdel www-data 2>/dev/null && log_success "已删除 www-data 用户" || log_warn "www-data 用户不存在或无法删除"
-        groupdel www-data 2>/dev/null && log_success "已删除 www-data 用户组" || log_warn "www-data 用户组不存在或无法删除"
+        if pgrep -u www-data >/dev/null 2>&1; then
+            log_warn "www-data 用户下有运行中的进程，跳过删除"
+        else
+            userdel www-data 2>/dev/null && log_success "已删除 www-data 用户" || log_warn "www-data 用户不存在或无法删除"
+            groupdel www-data 2>/dev/null && log_success "已删除 www-data 用户组" || log_warn "www-data 用户组不存在或无法删除"
+        fi
     fi
     
     systemctl daemon-reload
@@ -180,7 +193,11 @@ uninstall_mysql() {
     
     read -p "是否删除系统 mysql 用户? (y/N): " del_user
     if [[ "$del_user" =~ ^[Yy]$ ]]; then
-        userdel mysql 2>/dev/null && log_success "已删除 mysql 用户" || log_warn "mysql 用户不存在或无法删除"
+        if pgrep -u mysql >/dev/null 2>&1; then
+            log_warn "mysql 用户下有运行中的进程，跳过删除"
+        else
+            userdel mysql 2>/dev/null && log_success "已删除 mysql 用户" || log_warn "mysql 用户不存在或无法删除"
+        fi
     fi
     
     systemctl daemon-reload
@@ -233,61 +250,61 @@ uninstall_logrotate() {
 
 # 显示交互菜单
 show_menu() {
-    clear
-    echo "========================================"
-    echo "    LNMP 一键卸载脚本"
-    echo "========================================"
-    echo "1. 卸载 Nginx"
-    echo "2. 卸载 MySQL"
-    echo "3. 卸载 PHP"
-    echo "4. 卸载日志轮转配置"
-    echo "5. 一键卸载全部 (Nginx + MySQL + PHP + lnmp命令 + 日志轮转)"
-    echo "6. 仅卸载 lnmp 命令"
-    echo "0. 退出"
-    echo "========================================"
-    read -p "请选择要卸载的组件 [0-6]: " choice
-    case $choice in
-        1)
-            uninstall_nginx
-            ;;
-        2)
-            uninstall_mysql
-            ;;
-        3)
-            uninstall_php
-            ;;
-        4)
-            uninstall_logrotate
-            ;;
-        5)
-            log_warn "即将卸载全部 LNMP 组件及自定义命令，此操作不可逆！"
-            read -p "确认继续？(y/N): " confirm
-            if [[ "$confirm" =~ ^[Yy]$ ]]; then
+    while true; do
+        clear
+        echo "========================================"
+        echo "    LNMP 一键卸载脚本"
+        echo "========================================"
+        echo "1. 卸载 Nginx"
+        echo "2. 卸载 MySQL"
+        echo "3. 卸载 PHP"
+        echo "4. 卸载日志轮转配置"
+        echo "5. 一键卸载全部 (Nginx + MySQL + PHP + lnmp命令 + 日志轮转)"
+        echo "6. 仅卸载 lnmp 命令"
+        echo "0. 退出"
+        echo "========================================"
+        read -p "请选择要卸载的组件 [0-6]: " choice
+        case $choice in
+            1)
                 uninstall_nginx
+                ;;
+            2)
                 uninstall_mysql
+                ;;
+            3)
                 uninstall_php
-                uninstall_lnmp_command
+                ;;
+            4)
                 uninstall_logrotate
-                log_success "所有 LNMP 组件及自定义命令已卸载"
-            else
-                log_info "已取消全部卸载"
-            fi
-            ;;
-        6)
-            uninstall_lnmp_command
-            ;;
-        0)
-            log_info "退出脚本"
-            exit 0
-            ;;
-        *)
-            log_error "无效选择"
-            exit 1
-            ;;
-    esac
-    echo ""
-    read -p "按回车键继续..." dummy
-    show_menu
+                ;;
+            5)
+                log_warn "即将卸载全部 LNMP 组件及自定义命令，此操作不可逆！"
+                read -p "确认继续？(y/N): " confirm
+                if [[ "$confirm" =~ ^[Yy]$ ]]; then
+                    uninstall_nginx
+                    uninstall_mysql
+                    uninstall_php
+                    uninstall_lnmp_command
+                    uninstall_logrotate
+                    log_success "所有 LNMP 组件及自定义命令已卸载"
+                else
+                    log_info "已取消全部卸载"
+                fi
+                ;;
+            6)
+                uninstall_lnmp_command
+                ;;
+            0)
+                log_info "退出脚本"
+                exit 0
+                ;;
+            *)
+                log_error "无效选择"
+                ;;
+        esac
+        echo ""
+        read -p "按回车键继续..." dummy
+    done
 }
 
 # 主函数

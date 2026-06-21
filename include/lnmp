@@ -3,8 +3,12 @@
 # LNMP 服务管理命令
 # 功能：管理 LNMP 服务（start/stop/restart/reload/status/add/del）
 
-NGINX_CONF_DIR="/usr/local/nginx/conf/conf.d"
+INSTALL_PATH="${INSTALL_PATH:-/usr/local}"
+NGINX_CONF_DIR="${INSTALL_PATH}/nginx/conf/conf.d"
+NGINX_CONF_PATH="${INSTALL_PATH}/nginx/conf"
 WEB_ROOT="/home/wwwroot"
+LOG_PATH="/home/wwwlogs"
+SSL_PATH="${INSTALL_PATH}/nginx/conf/ssl"
 USER="www-data"
 GROUP="www-data"
 
@@ -116,7 +120,7 @@ server
         index index.html index.htm index.php default.html default.htm default.php;
         root  ${site_dir};
 
-        include enable-php-pathinfo.conf;
+        include ${NGINX_CONF_PATH}/enable-php-pathinfo.conf;
 
         location ~ .*\.(gif|jpg|jpeg|png|bmp|swf)$
         {
@@ -141,7 +145,7 @@ server
             return 301 https://\$host\$request_uri;
         }
 
-        access_log  /home/wwwlogs/${domain}.log;
+        access_log  ${LOG_PATH}/${domain}.log;
     }
 
 server
@@ -158,9 +162,9 @@ server
         ssl_prefer_server_ciphers on;
         ssl_ciphers "TLS13-AES-256-GCM-SHA384:TLS13-CHACHA20-POLY1305-SHA256:TLS13-AES-128-GCM-SHA256:EECDH+CHACHA20:EECDH+AES128:RSA+AES128:EECDH+AES256:RSA+AES256:!MD5";
         ssl_session_cache builtin:1000 shared:SSL:10m;
-        ssl_dhparam /usr/local/nginx/conf/ssl/dhparam.pem;
+        ssl_dhparam ${SSL_PATH}/dhparam.pem;
 
-        include enable-php-pathinfo.conf;
+        include ${NGINX_CONF_PATH}/enable-php-pathinfo.conf;
 
         location ~ .*\.(gif|jpg|jpeg|png|bmp|swf)$
         {
@@ -181,7 +185,7 @@ server
             deny all;
         }
 
-        access_log  /home/wwwlogs/${domain}.log;
+        access_log  ${LOG_PATH}/${domain}.log;
     }
 EOF
     else
@@ -194,7 +198,7 @@ server
         index index.html index.htm index.php default.html default.htm default.php;
         root  ${site_dir};
 
-        include enable-php-pathinfo.conf;
+        include ${NGINX_CONF_PATH}/enable-php-pathinfo.conf;
 
         location ~ .*\.(gif|jpg|jpeg|png|bmp|swf)$
         {
@@ -215,7 +219,7 @@ server
             deny all;
         }
 
-        access_log  /home/wwwlogs/${domain}.log;
+        access_log  ${LOG_PATH}/${domain}.log;
     }
 EOF
     fi
@@ -227,17 +231,21 @@ EOF
         exit 1
     fi
 
-    # 测试 Nginx 配置并提示重启
+    # 测试 Nginx 配置并重新加载
     echo
     echo "=========================================="
-    echo "虚拟主机配置完成！请执行以下命令测试并重新加载 Nginx："
-    echo "  nginx -t"
-    echo "  systemctl reload nginx"
+    if nginx -t 2>/dev/null; then
+        systemctl reload nginx
+        echo "虚拟主机 $domain 配置完成！Nginx 已重新加载。"
+    else
+        echo "警告：Nginx 配置测试失败，请检查配置文件：$conf_file"
+        echo "手动修复后执行：nginx -t && systemctl reload nginx"
+    fi
     if [ "$enable_ssl" = true ]; then
         echo ""
         echo "注意：请确保 dhparam.pem 文件存在："
-        echo "  /usr/local/nginx/conf/ssl/dhparam.pem"
-        echo "如不存在，可执行：openssl dhparam -out /usr/local/nginx/conf/ssl/dhparam.pem 2048"
+        echo "  ${SSL_PATH}/dhparam.pem"
+        echo "如不存在，可执行：openssl dhparam -out ${SSL_PATH}/dhparam.pem 2048"
     fi
     echo "=========================================="
 }
@@ -363,7 +371,7 @@ delhost()
         fi
         
         # 4. 删除访问日志（如果存在）
-        log_file="/home/wwwlogs/${domain}.log"
+        log_file="${LOG_PATH}/${domain}.log"
         if [ -f "$log_file" ]; then
             read -p "是否删除访问日志文件 $log_file？(y/n): " delete_log
             if [[ "$delete_log" =~ ^[Yy]$ ]]; then
@@ -468,9 +476,13 @@ delhost()
     if [ $? -eq 0 ]; then
         echo ""
         echo "=========================================="
-        echo "请执行以下命令测试并重新加载 Nginx："
-        echo "  nginx -t"
-        echo "  systemctl reload nginx"
+        if nginx -t 2>/dev/null; then
+            systemctl reload nginx
+            echo "站点 $domain 删除完成！Nginx 已重新加载。"
+        else
+            echo "警告：Nginx 配置测试失败，请检查配置"
+            echo "手动修复后执行：nginx -t && systemctl reload nginx"
+        fi
         echo "=========================================="
     else
         echo ""
@@ -482,38 +494,32 @@ delhost()
 case "$1" in
     add)
         addhost
-        systemctl reload nginx
         ;;
     del)
         delhost
-        systemctl reload nginx
         ;;
     start)
         echo "Starting LNMP services..."
-        systemctl start nginx
-        systemctl start mysql
-        systemctl start php-fpm
-        echo "LNMP services started"
+        systemctl start nginx && echo "  Nginx started" || echo "  Nginx start failed"
+        systemctl start mysql && echo "  MySQL started" || echo "  MySQL start failed"
+        systemctl start php-fpm && echo "  PHP-FPM started" || echo "  PHP-FPM start failed"
         ;;
     stop)
         echo "Stopping LNMP services..."
-        systemctl stop nginx
-        systemctl stop mysql
-        systemctl stop php-fpm
-        echo "LNMP services stopped"
+        systemctl stop nginx 2>/dev/null && echo "  Nginx stopped" || echo "  Nginx not running"
+        systemctl stop mysql 2>/dev/null && echo "  MySQL stopped" || echo "  MySQL not running"
+        systemctl stop php-fpm 2>/dev/null && echo "  PHP-FPM stopped" || echo "  PHP-FPM not running"
         ;;
     restart)
         echo "Restarting LNMP services..."
-        systemctl restart nginx
-        systemctl restart mysql
-        systemctl restart php-fpm
-        echo "LNMP services restarted"
+        systemctl restart nginx && echo "  Nginx restarted" || echo "  Nginx restart failed"
+        systemctl restart mysql && echo "  MySQL restarted" || echo "  MySQL restart failed"
+        systemctl restart php-fpm && echo "  PHP-FPM restarted" || echo "  PHP-FPM restart failed"
         ;;
     reload)
         echo "Reloading LNMP services..."
-        systemctl reload nginx
-        systemctl reload php-fpm
-        echo "LNMP services reloaded"
+        systemctl reload nginx && echo "  Nginx reloaded" || echo "  Nginx reload failed"
+        systemctl reload php-fpm && echo "  PHP-FPM reloaded" || echo "  PHP-FPM reload failed"
         ;;
     status)
         echo "=== LNMP Services Status ==="
